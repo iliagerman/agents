@@ -25,6 +25,10 @@ When needing to visualize audio (spectrum bars, waveforms, bass-reactive effects
 
 When building a marketing-quality promo video (Slack-style chats, product screenshots, typed text scenes, connector logos, and per-letter typing SFX synced to text reveal), load the [./rules/remotion-promo-video.md](./rules/remotion-promo-video.md) file for a reusable “contract” and production checklist.
 
+## External video slideshows with text (social media)
+
+When the user provides external video clips and wants text slides between them (for TikTok, Instagram Reels, Facebook Reels), load the [./rules/external-video-slideshow.md](./rules/external-video-slideshow.md) file. Covers safe zones, two-color typing text animation, 9:16 composition, and optional ElevenLabs narration.
+
 ## How to use
 
 Read individual rule files for detailed explanations and code examples:
@@ -56,6 +60,7 @@ Read individual rule files for detailed explanations and code examples:
 - [rules/transparent-videos.md](rules/transparent-videos.md) - Rendering out a video with transparency
 - [rules/trimming.md](rules/trimming.md) - Trimming patterns for Remotion - cut the beginning or end of animations
 - [rules/videos.md](rules/videos.md) - Embedding videos in Remotion - trimming, volume, speed, looping, pitch
+- [rules/external-video-slideshow.md](rules/external-video-slideshow.md) - External video slideshow with typed text slides for social media (safe zones, two-color text, ElevenLabs narration)
 - [rules/parameters.md](rules/parameters.md) - Make a video parametrizable by adding a Zod schema
 - [rules/maps.md](rules/maps.md) - Add a map using Mapbox and animate it
 - [rules/remotion-promo-video.md](rules/remotion-promo-video.md) - Build a polished promo video (Slack chats + screenshots + typed text + connectors + synced typing SFX)

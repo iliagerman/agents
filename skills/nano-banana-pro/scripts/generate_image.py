@@ -57,6 +57,12 @@ def main():
         help="Output resolution: 1K (default), 2K, or 4K"
     )
     parser.add_argument(
+        "--aspect-ratio",
+        metavar="W:H",
+        help="Crop output to this aspect ratio (e.g., '1:1' for square, '9:16' for vertical). "
+             "Center-crops the generated image to fit."
+    )
+    parser.add_argument(
         "--api-key", "-k",
         help="Gemini API key (overrides GEMINI_API_KEY env var)"
     )
@@ -165,6 +171,37 @@ def main():
                 else:
                     image.convert('RGB').save(str(output_path), 'PNG')
                 image_saved = True
+
+        # Apply aspect ratio crop if requested
+        if image_saved and args.aspect_ratio:
+            try:
+                w_ratio, h_ratio = [int(x) for x in args.aspect_ratio.split(":")]
+            except ValueError:
+                print(f"Error: Invalid aspect ratio '{args.aspect_ratio}'. Use W:H format (e.g., '1:1').", file=sys.stderr)
+                sys.exit(1)
+
+            saved_img = PILImage.open(str(output_path))
+            img_w, img_h = saved_img.size
+            target_ratio = w_ratio / h_ratio
+            current_ratio = img_w / img_h
+
+            if abs(current_ratio - target_ratio) > 0.01:
+                if current_ratio > target_ratio:
+                    # Image is too wide — crop width
+                    new_w = int(img_h * target_ratio)
+                    left = (img_w - new_w) // 2
+                    crop_box = (left, 0, left + new_w, img_h)
+                else:
+                    # Image is too tall — crop height
+                    new_h = int(img_w / target_ratio)
+                    top = (img_h - new_h) // 2
+                    crop_box = (0, top, img_w, top + new_h)
+
+                cropped = saved_img.crop(crop_box)
+                cropped.save(str(output_path), 'PNG')
+                print(f"Cropped to {args.aspect_ratio} aspect ratio: {cropped.size[0]}x{cropped.size[1]} (was {img_w}x{img_h})")
+            else:
+                print(f"Image already matches {args.aspect_ratio} aspect ratio ({img_w}x{img_h})")
 
         if image_saved:
             full_path = output_path.resolve()
