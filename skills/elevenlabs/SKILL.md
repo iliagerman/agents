@@ -5,7 +5,7 @@ version: 1.1.0
 homepage: https://github.com/odrobnik/elevenlabs-skill
 metadata:
   {
-    "openclaw":
+    "ilia":
       {
         "emoji": "🔊",
         "requires": { "bins": ["python3"], "env": ["ELEVENLABS_API_KEY"] },

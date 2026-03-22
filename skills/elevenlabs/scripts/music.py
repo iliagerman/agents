@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Generate a music clip via ElevenLabs Music API.
 
-This is a small helper for ClawdCast Studio so we can generate intro/outro stings
-(or background beds) on the fly, then feed them into `music.py`.
+Generate intro/outro stings or background beds on the fly.
 
 Examples:
   python musicgen.py \

@@ -44,8 +44,7 @@ def _load_dotenv(paths: list[Path]) -> None:
 
 # Load common env locations so cron jobs can rely on .env files.
 _load_dotenv([
-    Path.home() / ".moltbot" / ".env",
-    Path("/Users/oliver/clawd/.env"),
+    Path.home() / ".env",
 ])
 
 

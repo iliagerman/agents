@@ -6,7 +6,7 @@ description: >-
   Use when asked to create icons, illustrations, logos, or art for a webapp.
 metadata:
   {
-    "openclaw":
+    "ilia":
       {
         "emoji": "🎨",
         "requires": { "bins": ["uv"], "env": ["GEMINI_API_KEY"] },

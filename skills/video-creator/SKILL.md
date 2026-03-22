@@ -7,7 +7,7 @@ description: >-
   video, concept video, scene sequence, or animated clip.
 metadata:
   {
-    "openclaw":
+    "ilia":
       {
         "emoji": "🎬",
         "requires": { "bins": ["uv"], "env": ["GEMINI_API_KEY"] },
