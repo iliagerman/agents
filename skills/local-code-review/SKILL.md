@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: local-code-review
 description: Intensive code review of current changes. Scans for complexity, rule violations, scaling issues, security problems, and code clarity. Use when asked to review code, audit changes, or before pushing.
 ---
 
