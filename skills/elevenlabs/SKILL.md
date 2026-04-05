@@ -45,20 +45,27 @@ All scripts support multiple output formats via `--format`:
 | `pcm_24000` | Raw PCM, 24kHz |
 | `alaw_8000` | A-law, 8kHz (telephony) |
 
+## User's Cloned Voice
+
+The user has a cloned voice available. **Use this voice by default** for all speech generation unless the user explicitly requests a different voice.
+
+- **Voice ID:** `VrbhbG2Yb65ykORwtcqR`
+- **Name:** Ilia's voice
+
 ## Tools
 
 ### 1. Speech (`speech.py`)
 Text-to-speech using ElevenLabs voices.
 
 ```bash
-# Basic usage
-python3 {baseDir}/scripts/speech.py "Hello world" -v <voice_id> -o output.mp3
+# Default: use the user's cloned voice
+python3 {baseDir}/scripts/speech.py "Hello world" -v VrbhbG2Yb65ykORwtcqR -o output.mp3
 
 # With format option
-python3 {baseDir}/scripts/speech.py "Hello world" -v <voice_id> -o output.pcm --format pcm_44100
+python3 {baseDir}/scripts/speech.py "Hello world" -v VrbhbG2Yb65ykORwtcqR -o output.pcm --format pcm_44100
 
 # With voice settings
-python3 {baseDir}/scripts/speech.py "Hello" -v <voice_id> -o out.mp3 --stability 0.7 --similarity 0.8
+python3 {baseDir}/scripts/speech.py "Hello" -v VrbhbG2Yb65ykORwtcqR -o out.mp3 --stability 0.7 --similarity 0.8
 ```
 
 ### 2. Sound Effects (`sfx.py`)
