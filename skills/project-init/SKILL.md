@@ -259,6 +259,43 @@ Create the project root and full directory tree:
 
    <Short description>
 
+   ## ⚠️ MANDATORY: Test-Driven Development (TDD) Workflow
+
+   This project follows a strict TDD workflow. Every new feature — backend or frontend — MUST follow this order:
+
+   ### The TDD Rule: Tests FIRST, Code SECOND
+
+   1. **Write failing tests** — Before writing ANY implementation code, write the tests that define the expected behavior.
+   2. **Run the tests — confirm they fail** — Tests MUST fail before implementation exists. This proves the tests are actually testing something.
+   3. **Write the minimum implementation** — Write only enough code to make the failing tests pass.
+   4. **Run the tests — confirm they pass** — All new tests must pass. All existing tests must still pass.
+   5. **Refactor if needed** — Clean up the implementation while keeping all tests green.
+
+   ### Backend TDD Flow
+
+   For every new backend feature:
+   1. Write integration tests in `backend/tests/services/` or `backend/tests/dao/` that test the expected service/DAO behavior against a real database.
+   2. Write API tests in `backend/tests/api/` that test the HTTP request/response cycle.
+   3. Run `just test-backend` — confirm the new tests FAIL (no implementation yet).
+   4. Implement the feature (schemas, DAOs, services, routers).
+   5. Run `just test-backend` — confirm all tests PASS.
+
+   ### Frontend TDD Flow
+
+   For every new frontend feature:
+   1. Write integration tests in `client/tests/integration/` using Vitest + React Testing Library that test component interactions and behavior.
+   2. Write E2E tests in `client/tests/` using Playwright that test the full user flow.
+   3. Run the tests — confirm the new tests FAIL (no implementation yet).
+   4. Implement the feature (types, services, hooks, components, pages).
+   5. Run the tests — confirm all tests PASS.
+
+   ### What This Means in Practice
+
+   - **NEVER** start by writing a component, service, router, or any implementation code.
+   - **ALWAYS** start by writing the test file that describes what the feature should do.
+   - If you are about to create a new file in `app/services/`, `app/api/routers/`, `src/components/`, `src/features/`, or `src/pages/` — STOP. Write the test first.
+   - The only exception is pure scaffolding (types, enums, schemas) that tests may depend on.
+
    ## Stack
 
    - **Backend**: FastAPI + SQLAlchemy (async) + Postgres
