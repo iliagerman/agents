@@ -345,6 +345,21 @@ Create the project root and full directory tree:
    - `just db-migrate <message>` — Create a new Alembic migration
    - `just db-upgrade` — Apply database migrations
 
+   ## ⚠️ Git Hooks — Verify on Every Session
+
+   This project uses git hooks in `.githooks/` for smoke tests and automated code review on push.
+
+   **At the start of every conversation**, verify that git hooks are properly configured:
+
+   1. Run: `git config core.hooksPath`
+   2. If the output is `.githooks` — hooks are enabled, proceed normally.
+   3. If the output is empty or anything else — hooks are NOT enabled. **Immediately alert the user**:
+      - Tell them: "Git hooks are not configured. The pre-push hook (smoke tests + code review) will not run."
+      - Ask them to run: `just setup-hooks`
+      - Do NOT proceed with any work until the user confirms hooks are enabled.
+
+   Hooks are critical — they run smoke tests and Claude code review before every push. Without them, broken code can be pushed.
+
    ## Data Flow
 
    ```
