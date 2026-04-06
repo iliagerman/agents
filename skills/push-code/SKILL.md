@@ -23,11 +23,11 @@ Use this skill when the user asks you to:
 3. **Run the full relevant validation set unless it was already run after the latest changes.**
 4. **Use a meaningful commit message.** The message must describe the actual change, not a vague action like `updates` or `fix stuff`.
 5. **Review what is being committed.** Check the diff and avoid committing unrelated changes.
-6. **Run code review before committing.** Use the `/code-review` skill to scan all changes for complexity, rule violations, scaling issues, and security problems.
+6. **Run code review before committing.** Use the `/local-code-review` skill to scan all changes for complexity, rule violations, scaling issues, and security problems.
 
 ## Required Validation Workflow
 
-Before committing, run the `/code-review` skill first. It will lint, type-check, scan for complexity, validate rules, check for security issues, and produce a structured report. Fix all blockers and warnings before proceeding.
+Before committing, run the `/local-code-review` skill first. It will lint, type-check, scan for complexity, validate rules, check for security issues, and produce a structured report. Fix all blockers and warnings before proceeding.
 
 Then identify and run any additional checks for the project.
 
@@ -140,7 +140,7 @@ If the user asks to push the code:
 
 Before commit:
 
-- run `/code-review` to scan all changes
+- run `/local-code-review` to scan all changes
 - fix all blockers and warnings from the review report
 - inspect git diff
 - run all relevant validations
