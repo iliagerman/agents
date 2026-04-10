@@ -47,6 +47,7 @@ Create the project root and full directory tree:
         config.py
         database.py
         exceptions.py
+        logging.py
       dao/
         __init__.py
       enums/
@@ -172,7 +173,55 @@ Create the project root and full directory tree:
 
 5. **`app/core/exceptions.py`** — Base `AppException` and common subclasses (`NotFoundError`, `ValidationError`, `AuthorizationError`) with global exception handler.
 
-6. **`app/schemas/base.py`** — `JsonModel` base class with `camelCase` alias generator and `from_()` / `to()` protocol, plus `MessageResponse`.
+6. **`app/core/logging.py`** — Centralized logging configuration. This is the **only** place logging is configured in the entire application. All other modules use `from app.core.logging import get_logger`.
+
+   **Requirements:**
+   - Use Python's built-in `logging` module — no third-party logging libraries.
+   - **Single `RotatingFileHandler`** writing to `logs/app.log` with `maxBytes=10_485_760` (10 MB) and `backupCount=0` — when the file hits 10 MB it is deleted and a fresh one starts. No `.1`, `.2` rotated copies.
+   - A `StreamHandler` for console output (stdout).
+   - Log level controlled by `settings.DEBUG` — `DEBUG` when true, `INFO` otherwise.
+
+   **Structured log format** — every log line includes:
+   - Timestamp (ISO 8601)
+   - Log level
+   - `correlation_id` — a unique ID that traces a single request across the entire call chain
+   - `tenant_id` — the tenant the request belongs to (or `-` if not in a tenant context)
+   - Logger name
+   - Message
+
+   Example format:
+   ```
+   2026-04-08T14:23:01.123Z | INFO | corr=abc123 | tenant=42 | app.services.user | User created successfully
+   ```
+
+   **Context propagation** — use `contextvars.ContextVar` to store `correlation_id` and `tenant_id`:
+   ```python
+   import contextvars
+
+   correlation_id_ctx: ContextVar[str] = ContextVar("correlation_id", default="-")
+   tenant_id_ctx: ContextVar[str] = ContextVar("tenant_id", default="-")
+   ```
+
+   A custom `logging.Filter` reads these context vars and injects them into every log record automatically.
+
+   **`get_logger(name: str)`** — factory function that returns a logger with the filter already attached. All modules use this:
+   ```python
+   from app.core.logging import get_logger
+
+   logger = get_logger(__name__)
+   logger.info("Processing started")
+   ```
+
+   **FastAPI middleware** (`app/core/logging.py` or `app/main.py`) — a middleware that runs on every request and:
+   1. Generates a `correlation_id` (UUID4) or reads it from the `X-Correlation-ID` header if provided.
+   2. Extracts `tenant_id` from the authenticated user / token (or sets `-` for unauthenticated routes).
+   3. Sets both into the context vars.
+   4. Adds `X-Correlation-ID` to the response headers.
+   5. Logs the request start (`method`, `path`, `tenant_id`) and request end (`status_code`, `duration_ms`).
+
+   **`logs/` directory** — created automatically on startup if it doesn't exist. Add `logs/` to `.gitignore`.
+
+7. **`app/schemas/base.py`** — `JsonModel` base class with `camelCase` alias generator and `from_()` / `to()` protocol, plus `MessageResponse`.
 
 7. **`app/utils/http.py`** — `get_or_404()` and `require()` helpers.
 
@@ -217,7 +266,17 @@ Create the project root and full directory tree:
 
 9. **`src/main.tsx`** — Entry point rendering `App` into DOM.
 
-10. **`vite.config.ts`** — Configure `@/` path alias, dev server proxy to backend (`localhost:8000`), and Vitest.
+10. **`vite.config.ts`** — Configure `@/` path alias, Vitest, and dynamic backend proxy. The proxy target reads the backend port from `VITE_BACKEND_PORT` env var (set by the justfile), defaulting to `8000`:
+    ```ts
+    server: {
+      proxy: {
+        '/api': {
+          target: `http://localhost:${process.env.VITE_BACKEND_PORT || 8000}`,
+          changeOrigin: true,
+        },
+      },
+    },
+    ```
 
 11. **`tsconfig.json`** / **`tsconfig.app.json`** — Path aliases matching Vite config.
 
@@ -313,7 +372,7 @@ Create the project root and full directory tree:
    - `app/models/` — SQLAlchemy ORM models
    - `app/schemas/` — Pydantic models for request/response
    - `app/enums/` — StrEnum definitions
-   - `app/core/` — Config, database, exceptions
+   - `app/core/` — Config, database, exceptions, centralized logging
    - `app/utils/` — Shared utilities
 
    ### Frontend (client/)
@@ -331,15 +390,29 @@ Create the project root and full directory tree:
    - Updated before every push via git hook
    - Contains architecture, API, deployment, and development docs
 
+   ## Logging
+
+   - **Single logging configuration** in `app/core/logging.py` — all modules use `get_logger(__name__)`.
+   - Never use `import logging` directly or configure logging anywhere else.
+   - Every log line includes `correlation_id` (traces a full request) and `tenant_id` (multi-tenant context).
+   - Logs write to `logs/app.log` (10 MB max, then deleted and restarted — no rotated copies) and stdout.
+   - A FastAPI middleware sets `correlation_id` and `tenant_id` via context vars on every request.
+
    ## Commands
 
-   All commands use `just`:
+   All commands use `just`. **All `run` and `test` commands auto-detect available ports** — if the default port (8000 for backend, 5173 for frontend) is busy, the next available port is used automatically. This allows multiple instances to run side by side without collisions.
+
    - `just init` — Install all dependencies and set up the project
-   - `just run` — Start the full stack (backend + frontend) with hot reload
-   - `just test-smoke` — Run smoke tests
-   - `just test-e2e` — Run end-to-end tests
+   - `just run` — Start the full stack with hot reload (auto-finds ports, prints URLs)
+   - `just test-smoke` — Run smoke tests (auto-finds ports)
+   - `just test-e2e` — Spin up test servers on available ports and run E2E tests
+   - `just test-e2e-file <file>` — Run a specific E2E test file
+   - `just test-e2e-grep <pattern>` — Run E2E tests matching a pattern
+   - `just test-servers` — Start test servers on available ports (for manual E2E runs)
    - `just test-integration` — Run integration tests (frontend)
-   - `just test-backend` — Run all backend tests
+   - `just test-backend` — Run all backend tests (auto-finds port)
+   - `just test-backend-file <file>` — Run a specific backend test file
+   - `just test-backend-grep <pattern>` — Run backend tests matching a pattern
    - `just test-frontend` — Run all frontend tests
    - `just lint` — Run linters for both backend and frontend
    - `just db-migrate <message>` — Create a new Alembic migration
@@ -381,9 +454,26 @@ Create the project root and full directory tree:
 Create the `justfile` with all commands:
 
 ```just
+# Default port preferences (overridden automatically if busy)
+DEFAULT_BACKEND_PORT := "8000"
+DEFAULT_FRONTEND_PORT := "5173"
+
 # Default: list available commands
 default:
     @just --list
+
+# Find an available port starting from a preferred port.
+# Usage: just _find-port 8000
+# Returns an available port number on stdout.
+[private]
+_find-port PREFERRED:
+    #!/usr/bin/env bash
+    port={{ PREFERRED }}
+    while lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; do
+        echo "Port $port is busy, trying next..." >&2
+        port=$((port + 1))
+    done
+    echo "$port"
 
 # Initialize the project: install all dependencies and set up the database
 init:
@@ -401,48 +491,114 @@ init:
     cd backend && uv run alembic upgrade head
     @echo "Project initialized successfully."
 
-# Run the full stack with hot reload
+# Run the full stack with hot reload (auto-finds available ports)
 run:
     #!/usr/bin/env bash
+    set -euo pipefail
     trap 'kill 0' EXIT
-    echo "Starting backend..."
-    cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
-    echo "Starting frontend..."
-    cd client && npm run dev &
+
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    FRONTEND_PORT=$(just _find-port {{ DEFAULT_FRONTEND_PORT }})
+
+    echo "=== Starting backend on port $BACKEND_PORT ==="
+    cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port "$BACKEND_PORT" &
+
+    echo "=== Starting frontend on port $FRONTEND_PORT (proxying to backend:$BACKEND_PORT) ==="
+    cd client && VITE_BACKEND_PORT="$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" &
+
+    echo ""
+    echo "=== Stack running ==="
+    echo "  Frontend: http://localhost:$FRONTEND_PORT"
+    echo "  Backend:  http://localhost:$BACKEND_PORT"
+    echo "  API docs: http://localhost:$BACKEND_PORT/docs"
+    echo ""
     wait
 
-# Run smoke tests
+# Run smoke tests (auto-finds available ports for test servers)
 test-smoke:
-    cd backend && uv run pytest tests/ -m smoke --tb=short -q
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    echo "=== Running backend smoke tests (port $BACKEND_PORT) ==="
+    cd backend && TEST_PORT="$BACKEND_PORT" uv run pytest tests/ -m smoke --tb=short -q
+    echo "=== Running frontend smoke tests ==="
     cd client && npm run test -- --run tests/smoke
 
-# Run end-to-end tests
+# Start test servers (backend + frontend) on available ports for E2E tests
+test-servers:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'kill 0' EXIT
+
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    FRONTEND_PORT=$(just _find-port {{ DEFAULT_FRONTEND_PORT }})
+
+    echo "=== Starting test backend on port $BACKEND_PORT ==="
+    cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
+
+    echo "=== Starting test frontend on port $FRONTEND_PORT (proxying to backend:$BACKEND_PORT) ==="
+    cd client && VITE_BACKEND_PORT="$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" &
+
+    echo ""
+    echo "=== Test servers running ==="
+    echo "  Frontend: http://localhost:$FRONTEND_PORT"
+    echo "  Backend:  http://localhost:$BACKEND_PORT"
+    echo ""
+
+    # Write ports to a temp file so test-e2e can read them
+    echo "BACKEND_PORT=$BACKEND_PORT" > .test-ports
+    echo "FRONTEND_PORT=$FRONTEND_PORT" >> .test-ports
+    wait
+
+# Run end-to-end tests (auto-finds available ports)
 test-e2e *ARGS:
-    cd client && npx playwright test {{ ARGS }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    FRONTEND_PORT=$(just _find-port {{ DEFAULT_FRONTEND_PORT }})
+    trap 'kill 0' EXIT
+
+    echo "=== Starting test servers (backend:$BACKEND_PORT, frontend:$FRONTEND_PORT) ==="
+    cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
+    cd client && VITE_BACKEND_PORT="$BACKEND_PORT" npx vite --port "$FRONTEND_PORT" &
+    sleep 3
+
+    echo "=== Running E2E tests ==="
+    cd client && BASE_URL="http://localhost:$FRONTEND_PORT" npx playwright test {{ ARGS }}
 
 # Run a specific e2e test file
 test-e2e-file FILE:
-    cd client && npx playwright test {{ FILE }}
+    just test-e2e {{ FILE }}
 
 # Run e2e tests matching a pattern
 test-e2e-grep PATTERN:
-    cd client && npx playwright test --grep "{{ PATTERN }}"
+    just test-e2e --grep "{{ PATTERN }}"
 
 # Run frontend integration tests
 test-integration:
     cd client && npm run test -- --run tests/integration
 
-# Run all backend tests
+# Run all backend tests (auto-finds available port for test server)
 test-backend *ARGS:
-    cd backend && uv run pytest tests/ {{ ARGS }}
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    echo "=== Running backend tests (port $BACKEND_PORT) ==="
+    cd backend && TEST_PORT="$BACKEND_PORT" uv run pytest tests/ {{ ARGS }}
 
 # Run a specific backend test file
 test-backend-file FILE:
-    cd backend && uv run pytest {{ FILE }} -v
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    cd backend && TEST_PORT="$BACKEND_PORT" uv run pytest {{ FILE }} -v
 
 # Run backend tests matching a pattern
 test-backend-grep PATTERN:
-    cd backend && uv run pytest -k "{{ PATTERN }}" -v
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BACKEND_PORT=$(just _find-port {{ DEFAULT_BACKEND_PORT }})
+    cd backend && TEST_PORT="$BACKEND_PORT" uv run pytest -k "{{ PATTERN }}" -v
 
 # Run all frontend tests (integration + unit)
 test-frontend:
@@ -616,6 +772,12 @@ playwright-report/
 *.db
 *.sqlite3
 
+# Logs
+logs/
+
+# Runtime
+.test-ports
+
 # Build
 *.log
 ```
@@ -639,6 +801,7 @@ playwright-report/
 - Smoke tests run on every push — if they fail, the push is blocked.
 - Claude reviews every push for blockers and updates documentation accordingly.
 - `AGENTS.md` is a symlink to `CLAUDE.md` — edit `CLAUDE.md` and both stay in sync.
-- The backend runs on port 8000, the frontend on port 5173 with a proxy to the backend.
+- **Ports are auto-assigned**: default is 8000 (backend) and 5173 (frontend), but if busy the next available port is used. The assigned ports are printed at startup. This allows multiple instances (dev + test, or multiple devs) to run simultaneously without collisions.
 - Use `just run` to start the full stack with hot reload during development.
+- Use `just test-servers` to start test servers on separate available ports for manual E2E testing.
 - Use `just init` after cloning to set up the project on a new machine.
