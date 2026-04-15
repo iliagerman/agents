@@ -17,13 +17,25 @@ requires:
 
 AI-optimized web search using Tavily API. Designed for AI agents - returns clean, relevant content.
 
+## Runtime Rule
+
+When this skill is loaded, the prompt should also include an **Attached Script Files** section with absolute runtime paths.
+
+- Use the exact attached file path that ends with `/search.mjs` for search commands.
+- Use the exact attached file path that ends with `/extract.mjs` for extraction commands.
+- Do **not** invent alternate paths such as flat `/tmp/skills/...` paths.
+- If the attached script files are missing, stop and report that the Tavily skill installation is incomplete.
+
 ## Search
 
+First identify the attached absolute path for `search.mjs`, then run it with Node.
+
 ```bash
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/search.mjs "query"
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/search.mjs "query" -n 10
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/search.mjs "query" --deep
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/search.mjs "query" --topic news
+SEARCH_SCRIPT="/absolute/path/from-attached-script-files/search.mjs"
+node "$SEARCH_SCRIPT" "query"
+node "$SEARCH_SCRIPT" "query" -n 10
+node "$SEARCH_SCRIPT" "query" --deep
+node "$SEARCH_SCRIPT" "query" --topic news
 ```
 
 ### Options
@@ -35,9 +47,12 @@ node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/search.mjs "q
 
 ## Extract Content from URL
 
+First identify the attached absolute path for `extract.mjs`, then run it with Node.
+
 ```bash
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/extract.mjs "https://example.com/article"
-node ${MORDECAI_SKILLS_BASE_DIR}/[USER_NAME]/tavily-search/scripts/extract.mjs "url1" "url2" "url3"
+EXTRACT_SCRIPT="/absolute/path/from-attached-script-files/extract.mjs"
+node "$EXTRACT_SCRIPT" "https://example.com/article"
+node "$EXTRACT_SCRIPT" "url1" "url2" "url3"
 ```
 
 Extracts raw content from one or more URLs for processing.
@@ -46,9 +61,12 @@ Extracts raw content from one or more URLs for processing.
 
 - `TAVILY_API_KEY` environment variable (get from https://tavily.com)
 - Node.js runtime
+- Attached runtime script files for `search.mjs` and `extract.mjs`
 
 ## Notes
 
 - Tavily is optimized for AI - returns clean, relevant snippets
 - Use `--deep` for complex research questions
 - Use `--topic news` for current events
+- The Node scripts read `TAVILY_API_KEY` directly from the environment, so you do not need to pass the API key as a command-line argument
+- Prefer quoting the script path when running Node commands
