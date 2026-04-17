@@ -1,0 +1,135 @@
+{
+  "title": "Package plan-visualizer as Community Plugin",
+  "subtitle": "Removes personal coupling (`open-cursor://`, macOS `open`, thorough-planning structure) so any engineer can install and use the agent via `/plugin install plan-visualizer`.",
+  "profile": "Standard profile",
+  "file_count": 8,
+  "step_count": 5,
+  "before": [
+    {
+      "title": "plan-visualizer Agent",
+      "status": "CHANGED",
+      "details": [
+        "Lives at `~/.claude/agents/plan-visualizer.md` (user-local only)",
+        "Hardcoded `open-cursor://` protocol in plan link href",
+        "Strict validation assumes `## Summary` + `**Goal:**` + `**Profile:**`",
+        "Step 8.3 auto-opens HTML via macOS `open` command"
+      ]
+    },
+    { "title": "plan link protocol", "kind": "label" },
+    {
+      "title": "open-cursor:// Protocol",
+      "status": "REMOVED",
+      "details": [
+        "Custom macOS URL scheme requiring personal AppleScript handler",
+        "Requires Cursor editor; no other engineer has this handler registered"
+      ]
+    },
+    { "title": "template source", "kind": "label" },
+    {
+      "title": "HTML Template",
+      "status": "CHANGED",
+      "details": [
+        "At `~/.claude/agents/references/plan-visualizer-template.html`",
+        "Agent fetches via Glob lookup against user-local `~/.claude/agents/references/`",
+        "Contains `open-cursor://` in plan link href"
+      ]
+    },
+    { "title": "post-write action", "kind": "label" },
+    {
+      "title": "macOS Auto-Open Step",
+      "status": "REMOVED",
+      "details": [
+        "Step 8.3 runs `open <path>` — macOS-only shell command",
+        "Imposes UX choice; fails silently on Linux/Windows"
+      ]
+    },
+    { "title": "marketplace visibility", "kind": "label" },
+    {
+      "title": "marketplace.json",
+      "status": "CHANGED",
+      "details": [
+        "No `plan-visualizer` entry yet — agent not discoverable via `/plugin search`"
+      ]
+    }
+  ],
+  "after": [
+    {
+      "title": "Community Plugin Agent",
+      "status": "ADDED",
+      "details": [
+        "At `plugins-community/plan-visualizer/agents/plan-visualizer.md`",
+        "Moderate fallback parsing — works with any markdown plan format",
+        "Profile badge omitted entirely when `**Profile:**` line absent",
+        "No personal path assumptions; installable via `/plugin install plan-visualizer`"
+      ]
+    },
+    { "title": "plan link protocol", "kind": "label" },
+    {
+      "title": "file:// Protocol",
+      "status": "ADDED",
+      "details": [
+        "Universal browser protocol — no custom handler or editor required",
+        "Format: `file:///absolute/path/to/plan.md` (three slashes)"
+      ]
+    },
+    { "title": "template source", "kind": "label" },
+    {
+      "title": "Knowledge-Injected Template",
+      "status": "ADDED",
+      "details": [
+        "At `plugins-community/plan-visualizer/knowledge/plan-visualizer-template.html`",
+        "Auto-injected via `knowledge:` frontmatter — no Glob lookup needed",
+        "All `open-cursor://` references replaced with `file://`"
+      ]
+    },
+    { "title": "post-write behavior", "kind": "label" },
+    {
+      "title": "Plugin Manifest + Hooks",
+      "status": "ADDED",
+      "details": [
+        "`plugin.json`: name, description, version `1.0.0`, author `client-foundations`",
+        "`hooks/hooks.json`: `{\"hooks\": {}}` — no custom hook triggers",
+        "Symlinks to `../shared/scripts` and shared hooks (CI-required)"
+      ]
+    },
+    { "title": "marketplace visibility", "kind": "label" },
+    {
+      "title": "marketplace.json",
+      "status": "CHANGED",
+      "details": [
+        "New entry under `development-lifecycle` category",
+        "Tags: `domain:general`, `role:developer`",
+        "Keywords: `plan`, `visualization`, `architecture`, `html`, `diff`, `before-after`"
+      ]
+    }
+  ],
+  "key_changes": [
+    "Agent moved from `~/.claude/agents/` to `plugins-community/plan-visualizer/agents/` — shareable without personal config",
+    "`open-cursor://` replaced with `file://` in both agent instructions and HTML template",
+    "HTML template now auto-injected via `knowledge:` frontmatter, eliminating Glob-based path lookup",
+    "Strict plan-structure validation replaced with 4-level fallback chain supporting any markdown format",
+    "macOS `open <path>` step removed — callers decide how to open the output file"
+  ],
+  "key_decisions": [
+    "`file://` chosen over `open-cursor://` — universal browser protocol, no custom handler; strictly more portable",
+    "`knowledge:` frontmatter for template injection — eliminates path assumptions against user-local `~/.claude/agents/references/`",
+    "Moderate fallback parsing over strict validation — compatibility with any markdown plan format, not just thorough-planning output",
+    "No auto-open step — removes macOS dependency and avoids imposing UX choice on other engineers"
+  ],
+  "risks": [
+    {
+      "description": "Knowledge injection may truncate large HTML template",
+      "mitigation": "keep template under 500 lines; document Glob fallback in README"
+    },
+    {
+      "description": "`file://` links may be blocked by some browsers' cross-origin restrictions",
+      "mitigation": "document limitation in README; most browsers allow `file://` to `file://` navigation"
+    }
+  ],
+  "out_of_scope": [
+    "New visualization features or layout changes beyond decoupling",
+    "Tests or evals for the plan-visualizer agent",
+    "Modifying the user's personal `~/.claude/agents/plan-visualizer.md`",
+    "Skills (agent-only plugin — no skill file needed)"
+  ]
+}
