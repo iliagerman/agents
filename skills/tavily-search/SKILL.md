@@ -1,5 +1,5 @@
 ---
-name: tavily_search
+name: tavily-search
 description: AI-optimized web search via Tavily API. Returns concise, relevant results for AI agents.
 version: 1.0.0
 author: tavily
