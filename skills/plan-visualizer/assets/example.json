@@ -103,6 +103,52 @@
       ]
     }
   ],
+  "file_manifest": [
+    {
+      "path": "plugins-community/plan-visualizer/agents/plan-visualizer.md",
+      "action": "add",
+      "description": "New community plugin agent definition with moderate fallback parsing"
+    },
+    {
+      "path": "plugins-community/plan-visualizer/knowledge/plan-visualizer-template.html",
+      "action": "add",
+      "description": "HTML template with file:// protocol replacing open-cursor://"
+    },
+    {
+      "path": "plugins-community/plan-visualizer/plugin.json",
+      "action": "add",
+      "description": "Plugin manifest — name, version, author metadata"
+    },
+    {
+      "path": "plugins-community/plan-visualizer/hooks/hooks.json",
+      "action": "add",
+      "description": "Empty hooks scaffold (CI-required)"
+    },
+    {
+      "path": "marketplace.json",
+      "action": "modify",
+      "description": "Add plan-visualizer entry under development-lifecycle category"
+    },
+    {
+      "path": "~/.claude/agents/plan-visualizer.md",
+      "action": "remove",
+      "description": "Personal agent definition — replaced by community plugin"
+    },
+    {
+      "path": "~/.claude/agents/references/plan-visualizer-template.html",
+      "action": "remove",
+      "description": "Personal template — replaced by knowledge-injected version"
+    }
+  ],
+
+  "diagrams": [
+    {
+      "title": "Plugin Resolution Flow",
+      "description": "How the plugin system resolves the plan-visualizer agent after installation.",
+      "mermaid": "graph TD\n  A[\"/plugin install plan-visualizer\"] --> B[Download to plugins-community/]\n  B --> C[Register in marketplace.json]\n  C --> D[knowledge: frontmatter injects template]\n  D --> E[Agent writes HTML with file:// links]\n  E --> F[Browser opens visualization]"
+    }
+  ],
+
   "key_changes": [
     "Agent moved from `~/.claude/agents/` to `plugins-community/plan-visualizer/agents/` — shareable without personal config",
     "`open-cursor://` replaced with `file://` in both agent instructions and HTML template",
@@ -110,11 +156,49 @@
     "Strict plan-structure validation replaced with 4-level fallback chain supporting any markdown format",
     "macOS `open <path>` step removed — callers decide how to open the output file"
   ],
+  "tradeoffs": [
+    {
+      "decision": "Use knowledge: frontmatter injection instead of Glob-based template lookup",
+      "pros": [
+        "No path assumptions — works regardless of install location",
+        "Template auto-available in agent context without extra tool calls"
+      ],
+      "cons": [
+        "Template size counts against context window budget",
+        "Large templates (500+ lines) risk truncation by the knowledge injector"
+      ]
+    },
+    {
+      "decision": "Moderate fallback parsing instead of strict markdown structure validation",
+      "pros": [
+        "Works with any markdown plan format, not just thorough-planning output",
+        "More resilient to plan format changes over time"
+      ],
+      "cons": [
+        "May extract lower-quality data from loosely structured plans",
+        "Harder to give specific error messages when extraction fails"
+      ]
+    }
+  ],
+
   "key_decisions": [
     "`file://` chosen over `open-cursor://` — universal browser protocol, no custom handler; strictly more portable",
     "`knowledge:` frontmatter for template injection — eliminates path assumptions against user-local `~/.claude/agents/references/`",
     "Moderate fallback parsing over strict validation — compatibility with any markdown plan format, not just thorough-planning output",
     "No auto-open step — removes macOS dependency and avoids imposing UX choice on other engineers"
+  ],
+
+  "alternatives": [
+    {
+      "title": "Keep open-cursor:// with a fallback chain",
+      "description": "Detect which editors are installed and try open-cursor://, then vscode://, then file://.",
+      "why_rejected": "Adds complexity and still requires per-editor URL scheme registration. file:// works everywhere with zero setup."
+    },
+    {
+      "title": "Embed template as a Python string in the agent",
+      "description": "Inline the full HTML template directly in the agent markdown as a code block.",
+      "why_rejected": "Would bloat the agent file to 400+ lines and make the template hard to maintain. knowledge: injection keeps them separate."
+    }
   ],
   "risks": [
     {

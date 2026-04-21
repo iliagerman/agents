@@ -97,6 +97,123 @@ def render_bullet_list(entries: list, symbol: str, symbol_class: str) -> str:
     return "\n".join(parts)
 
 
+FILE_ACTION_CLASSES = {
+    "ADD": "badge-added",
+    "MODIFY": "badge-changed",
+    "REMOVE": "badge-removed",
+}
+
+
+def render_file_manifest(entries: list[dict]) -> str:
+    if not entries:
+        return ""
+    rows = []
+    for entry in entries:
+        path = html.escape(entry.get("path", ""))
+        action = (entry.get("action") or "modify").upper()
+        badge_class = FILE_ACTION_CLASSES.get(action, "badge-changed")
+        desc = render_inline(entry.get("description", ""))
+        rows.append(
+            f'<tr>'
+            f'<td><span class="badge {badge_class}">{html.escape(action)}</span></td>'
+            f'<td><code class="inline">{path}</code></td>'
+            f'<td class="fm-desc">{desc}</td>'
+            f'</tr>'
+        )
+    table_rows = "\n".join(rows)
+    return (
+        '<section class="section">'
+        '<h2 class="section-title"><span class="marker sym-file">⊞</span>File manifest</h2>'
+        '<table class="file-manifest">'
+        '<thead><tr><th>Action</th><th>Path</th><th>Description</th></tr></thead>'
+        f'<tbody>{table_rows}</tbody>'
+        '</table>'
+        '</section>'
+    )
+
+
+def render_diagrams(entries: list[dict]) -> str:
+    if not entries:
+        return ""
+    parts = []
+    for entry in entries:
+        title = html.escape(entry.get("title", "Diagram"))
+        desc = render_inline(entry.get("description", ""))
+        mermaid_src = entry.get("mermaid", "")
+        desc_html = f'<p class="diagram-desc">{desc}</p>' if desc else ""
+        # Mermaid div with a <pre> fallback for offline
+        parts.append(
+            f'<div class="diagram-block">'
+            f'<h3 class="diagram-title">{title}</h3>'
+            f'{desc_html}'
+            f'<div class="mermaid">{html.escape(mermaid_src)}</div>'
+            f'<pre class="mermaid-fallback">{html.escape(mermaid_src)}</pre>'
+            f'</div>'
+        )
+    blocks = "\n".join(parts)
+    return (
+        '<section class="section">'
+        '<h2 class="section-title"><span class="marker sym-diagram">◈</span>Diagrams</h2>'
+        f'{blocks}'
+        '</section>'
+    )
+
+
+def render_tradeoffs(entries: list[dict]) -> str:
+    if not entries:
+        return ""
+    parts = []
+    for entry in entries:
+        decision = render_inline(entry.get("decision", ""))
+        pros = entry.get("pros") or []
+        cons = entry.get("cons") or []
+        pros_items = "".join(f'<li class="pro-item">{render_inline(p)}</li>' for p in pros)
+        cons_items = "".join(f'<li class="con-item">{render_inline(c)}</li>' for c in cons)
+        parts.append(
+            f'<div class="tradeoff-card">'
+            f'<div class="tradeoff-decision">{decision}</div>'
+            f'<div class="tradeoff-columns">'
+            f'<div class="tradeoff-col"><div class="tradeoff-col-head pro-head">Pros</div><ul class="tradeoff-list">{pros_items}</ul></div>'
+            f'<div class="tradeoff-col"><div class="tradeoff-col-head con-head">Cons</div><ul class="tradeoff-list">{cons_items}</ul></div>'
+            f'</div></div>'
+        )
+    blocks = "\n".join(parts)
+    return (
+        '<section class="section">'
+        '<h2 class="section-title"><span class="marker sym-tradeoff">⇋</span>Tradeoffs</h2>'
+        f'{blocks}'
+        '</section>'
+    )
+
+
+def render_alternatives(entries: list[dict]) -> str:
+    if not entries:
+        return ""
+    parts = []
+    for entry in entries:
+        title = render_inline(entry.get("title", ""))
+        desc = render_inline(entry.get("description", ""))
+        why_rejected = render_inline(entry.get("why_rejected", ""))
+        rejected_html = (
+            f'<div class="alt-rejected"><span class="alt-rejected-label">Why not:</span> {why_rejected}</div>'
+            if why_rejected else ""
+        )
+        parts.append(
+            f'<div class="alt-card">'
+            f'<div class="alt-title">{title}</div>'
+            f'<div class="alt-desc">{desc}</div>'
+            f'{rejected_html}'
+            f'</div>'
+        )
+    blocks = "\n".join(parts)
+    return (
+        '<section class="section">'
+        '<h2 class="section-title"><span class="marker sym-alt">⊘</span>Alternatives considered</h2>'
+        f'{blocks}'
+        '</section>'
+    )
+
+
 def render_html(plan: dict) -> str:
     title = html.escape(plan.get("title", "Plan Visualization"))
     subtitle = render_inline(plan.get("subtitle", ""))
@@ -117,12 +234,17 @@ def render_html(plan: dict) -> str:
     before_html = render_column(plan.get("before", []))
     after_html = render_column(plan.get("after", []))
 
+    file_manifest_html = render_file_manifest(plan.get("file_manifest", []))
+    diagrams_html = render_diagrams(plan.get("diagrams", []))
+
     key_changes_html = render_bullet_list(
         plan.get("key_changes", []), "→", "sym-arrow"
     )
+    tradeoffs_html = render_tradeoffs(plan.get("tradeoffs", []))
     key_decisions_html = render_bullet_list(
         plan.get("key_decisions", []), "◇", "sym-diamond"
     )
+    alternatives_html = render_alternatives(plan.get("alternatives", []))
     risks_html = render_bullet_list(plan.get("risks", []), "⚠", "sym-warn")
     out_of_scope_html = render_bullet_list(
         plan.get("out_of_scope", []), "✕", "sym-x"
@@ -136,8 +258,12 @@ def render_html(plan: dict) -> str:
         generated=generated,
         before=before_html,
         after=after_html,
+        file_manifest=file_manifest_html,
+        diagrams=diagrams_html,
         key_changes=key_changes_html,
+        tradeoffs=tradeoffs_html,
         key_decisions=key_decisions_html,
+        alternatives=alternatives_html,
         risks=risks_html,
         out_of_scope=out_of_scope_html,
     )
@@ -403,6 +529,153 @@ TEMPLATE = """<!DOCTYPE html>
     padding: 4px 0;
   }}
 
+  /* File manifest table */
+  .file-manifest {{
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }}
+  .file-manifest th {{
+    text-align: left;
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }}
+  .file-manifest td {{
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }}
+  .file-manifest tr:last-child td {{
+    border-bottom: none;
+  }}
+  .fm-desc {{
+    color: var(--muted);
+    font-size: 12.5px;
+  }}
+  .sym-file {{ color: #6ea8fe; }}
+
+  /* Diagrams */
+  .sym-diagram {{ color: #a78bfa; }}
+  .diagram-block {{
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }}
+  .diagram-title {{
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 6px;
+    color: var(--text);
+  }}
+  .diagram-desc {{
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }}
+  .mermaid {{
+    text-align: center;
+    background: transparent;
+  }}
+  .mermaid-fallback {{
+    display: none;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    background: rgba(110,168,254,0.05);
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }}
+
+  /* Tradeoffs */
+  .sym-tradeoff {{ color: #f5b041; }}
+  .tradeoff-card {{
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }}
+  .tradeoff-decision {{
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 10px;
+    color: var(--text);
+  }}
+  .tradeoff-columns {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }}
+  .tradeoff-col-head {{
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }}
+  .pro-head {{ color: var(--added); }}
+  .con-head {{ color: var(--removed); }}
+  .tradeoff-list {{
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 12.5px;
+  }}
+  .tradeoff-list li {{
+    padding: 2px 0 2px 14px;
+    position: relative;
+    color: #c3cbd8;
+  }}
+  .tradeoff-list li::before {{
+    content: "·";
+    color: var(--dim);
+    position: absolute;
+    left: 4px;
+    font-weight: 700;
+  }}
+  .pro-item {{ color: rgba(63,185,80,0.85); }}
+  .con-item {{ color: rgba(244,114,114,0.85); }}
+
+  /* Alternatives */
+  .sym-alt {{ color: var(--muted); }}
+  .alt-card {{
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }}
+  .alt-title {{
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }}
+  .alt-desc {{
+    font-size: 12.5px;
+    color: #c3cbd8;
+    margin-bottom: 6px;
+  }}
+  .alt-rejected {{
+    font-size: 12px;
+    color: var(--muted);
+    font-style: italic;
+  }}
+  .alt-rejected-label {{
+    color: var(--removed);
+    font-style: normal;
+    font-weight: 600;
+  }}
+
   @media (max-width: 820px) {{
     .columns {{ grid-template-columns: 1fr; }}
     .top {{ flex-direction: column; align-items: flex-start; }}
@@ -443,15 +716,23 @@ TEMPLATE = """<!DOCTYPE html>
       </section>
     </div>
 
+    {file_manifest}
+
+    {diagrams}
+
     <section class="section">
       <h2 class="section-title"><span class="marker sym-arrow">→</span>Key changes</h2>
       {key_changes}
     </section>
 
+    {tradeoffs}
+
     <section class="section">
       <h2 class="section-title"><span class="marker sym-diamond">◇</span>Key decisions</h2>
       {key_decisions}
     </section>
+
+    {alternatives}
 
     <section class="section">
       <h2 class="section-title"><span class="marker sym-warn">⚠</span>Risks</h2>
@@ -463,6 +744,38 @@ TEMPLATE = """<!DOCTYPE html>
       {out_of_scope}
     </section>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {{
+      var mermaidBlocks = document.querySelectorAll('.mermaid');
+      if (mermaidBlocks.length === 0) return;
+      try {{
+        mermaid.initialize({{
+          startOnLoad: true,
+          theme: 'dark',
+          themeVariables: {{
+            primaryColor: '#182030',
+            primaryTextColor: '#e6ebf2',
+            primaryBorderColor: '#2f3a4c',
+            lineColor: '#5b6778',
+            secondaryColor: '#131922',
+            tertiaryColor: '#0b0f14',
+            fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
+            fontSize: '13px'
+          }}
+        }});
+      }} catch (e) {{
+        // Mermaid failed to load (offline?) — show fallback code blocks
+        mermaidBlocks.forEach(function(el) {{
+          el.style.display = 'none';
+          var fallback = el.nextElementSibling;
+          if (fallback && fallback.classList.contains('mermaid-fallback')) {{
+            fallback.style.display = 'block';
+          }}
+        }});
+      }}
+    }});
+  </script>
 </body>
 </html>
 """

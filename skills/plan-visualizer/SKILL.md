@@ -66,8 +66,40 @@ Your job is to turn a loose markdown plan into a structured JSON object matching
     }
   ],
 
+  "file_manifest": [
+    { "path": "src/services/auth.ts", "action": "modify", "description": "Add token refresh logic" },
+    { "path": "src/services/session.ts", "action": "add", "description": "New session management service" },
+    { "path": "src/utils/legacy-auth.ts", "action": "remove", "description": "Replaced by auth.ts" }
+  ],
+
+  "diagrams": [
+    {
+      "title": "Authentication Flow — After",
+      "description": "How the new token refresh cycle works.",
+      "mermaid": "graph LR\n  A[Client] -->|request| B[Auth Service]\n  B -->|validate| C[Token Store]\n  C -->|expired| D[Refresh]\n  D --> B"
+    }
+  ],
+
   "key_changes":   ["One-line summary of a major change", "..."],
+
+  "tradeoffs": [
+    {
+      "decision": "Use JWT instead of opaque tokens",
+      "pros": ["Stateless verification", "No DB lookup per request"],
+      "cons": ["Cannot revoke individual tokens", "Larger payload size"]
+    }
+  ],
+
   "key_decisions": ["Design choice and why it was made", "..."],
+
+  "alternatives": [
+    {
+      "title": "Session-based auth with Redis",
+      "description": "Store sessions server-side in Redis with a session cookie.",
+      "why_rejected": "Adds Redis as an infrastructure dependency; JWT is sufficient for our scale."
+    }
+  ],
+
   "risks": [
     { "description": "What could go wrong", "mitigation": "how we plan to handle it" },
     "Risk without a mitigation (plain string is also valid)"
@@ -87,6 +119,10 @@ Your job is to turn a loose markdown plan into a structured JSON object matching
   - **Label**: `{ "title": "section marker", "kind": "label" }`. Use these sparingly to group cards (e.g. "plan link protocol", "template source").
   - Keep the `before` and `after` arrays roughly symmetric when possible — label-for-label, card-for-card — so they read side by side.
 - **`details`**: short bullet points. Prefer 1 line each. Use backticks for paths, identifiers, commands.
+- **`file_manifest`**: array of `{path, action, description}`. `action` is one of `add`, `modify`, or `remove` (case-insensitive). Renders as a compact table with colored badges. This is the file-level "what changes where" view — complementary to the component-level BEFORE/AFTER panels. Include every file the plan touches.
+- **`diagrams`**: array of `{title, description?, mermaid}`. `mermaid` is a Mermaid syntax string (flowcharts, sequence diagrams, component diagrams). The browser renders these using Mermaid.js loaded from CDN — the Python script itself still needs no network. If the browser is offline, raw Mermaid text shows as a code block fallback. Use diagrams when the plan involves data flows, state machines, request lifecycles, or component relationships that benefit from a visual. Don't force diagrams for simple plans.
+- **`tradeoffs`**: array of `{decision, pros: [...], cons: [...]}`. Distinct from `key_decisions` — decisions say "we chose X because Y", while tradeoffs show the tension: "X gives us A but costs B". Include when the plan makes a non-obvious architectural choice with real downsides.
+- **`alternatives`**: array of `{title, description, why_rejected}`. Approaches that were considered (or should have been considered) and explicitly not taken. This surfaces the design space so the reviewer can push back on the chosen path. If the plan doesn't mention alternatives, think about what a senior engineer would ask "why not X?" about — include those.
 - **`risks`**: can be either a string or `{description, mitigation}`. Prefer the object form; it renders the mitigation in italics next to the risk.
 - **`out_of_scope`**: explicit non-goals. Useful signal; include it if the plan mentions any exclusions.
 
