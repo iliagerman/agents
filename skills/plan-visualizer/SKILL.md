@@ -1,7 +1,21 @@
 ---
 name: plan-visualizer
-description: Turns a Claude Code markdown plan, audit/review report, or investigation document into a visual HTML page. Use this whenever the user asks to "visualize a plan", "show me the plan visually", "make an infographic / diagram of this plan", "review as a picture", "render this report", "make this audit easier to read", or wants a BEFORE/AFTER architecture view. Two modes are supported: (1) plan mode — BEFORE/AFTER columns + ADDED/CHANGED/REMOVED badges + file manifest, and (2) report mode — free-form sections with prose, bullets, tables, callouts, and Mermaid diagrams. Both modes can render with a per-section comment box and an "Export comments" button that produces a Markdown-formatted Q&A document the user can paste back into the conversation. The output is a dark-themed HTML page that opens automatically in the default browser via `file://`.
-compatibility: Requires Python 3.8+ on PATH. Uses only the Python standard library. No network access needed (Mermaid is loaded from CDN with a code-block fallback if offline).
+description: >-
+  Turns a Claude Code markdown plan, audit/review report, or investigation
+  document into a visual HTML page. Use when asked to "visualize a plan",
+  "show me the plan visually", "make an infographic of this plan", "render
+  this report", or wants a BEFORE/AFTER architecture view. Supports plan mode
+  (BEFORE/AFTER columns + badges + file manifest) and report mode (free-form
+  sections with prose, bullets, tables, callouts, Mermaid diagrams). Both
+  modes support per-section comment boxes with an "Export comments" button.
+metadata:
+  {
+    "ilia":
+      {
+        "emoji": "📊",
+        "requires": { "bins": ["python3"], "env": [] },
+      },
+  }
 ---
 
 # Plan / Report Visualizer
