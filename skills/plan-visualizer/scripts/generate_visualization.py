@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
-"""Generate a visual HTML infographic from a structured plan.
+"""Generate a visual HTML page from a structured plan or report JSON.
 
-Reads a JSON description of a plan and produces a standalone HTML file showing
-BEFORE/AFTER architecture panels, color-coded diffs, key changes, decisions,
-risks, and out-of-scope items. Opens the file in the default browser via the
-`file://` protocol so it works on macOS, Linux, and Windows.
+Two modes:
+  - Plan mode  — BEFORE/AFTER columns + ADDED/CHANGED/REMOVED badges + file
+                 manifest. Best for "here's what I'd change" proposals.
+  - Report mode — free-form sections (prose / bullets / table / diagram /
+                 callout / cards) for audits, reviews, investigations.
+Both modes can render with per-section comment boxes (`comments_enabled: true`)
+and a floating "Export comments" button that produces Markdown-formatted Q&A
+the user can paste back to the assistant.
+
+Output is a single self-contained HTML file. Mermaid is loaded from CDN with
+a code-block fallback if offline. The file is opened via the `file://`
+protocol so it works on macOS, Linux, and Windows.
 
 Usage:
     python3 generate_visualization.py plan.json
@@ -33,9 +41,25 @@ STATUS_CLASSES = {
 
 
 def render_inline(text: str) -> str:
-    """Escape text and render `code` spans in monospace."""
+    """Escape text and render `code` spans + **bold** in monospace/strong."""
     escaped = html.escape(text)
-    return re.sub(r"`([^`]+)`", r'<code class="inline">\1</code>', escaped)
+    # Code spans first (greedy non-backtick).
+    escaped = re.sub(r"`([^`]+)`", r'<code class="inline">\1</code>', escaped)
+    # Bold (**...**).
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    return escaped
+
+
+def render_prose_body(text: str) -> str:
+    """Split blank-line-separated paragraphs and render inline markup per paragraph."""
+    if not text:
+        return ""
+    paragraphs = re.split(r"\n\s*\n", text.strip())
+    return "\n".join(
+        f'<p class="prose-p">{render_inline(p.strip())}</p>'
+        for p in paragraphs
+        if p.strip()
+    )
 
 
 def render_column_item(item: dict) -> str:
@@ -121,14 +145,15 @@ def render_file_manifest(entries: list[dict]) -> str:
             f'</tr>'
         )
     table_rows = "\n".join(rows)
-    return (
-        '<section class="section">'
-        '<h2 class="section-title"><span class="marker sym-file">⊞</span>File manifest</h2>'
-        '<table class="file-manifest">'
-        '<thead><tr><th>Action</th><th>Path</th><th>Description</th></tr></thead>'
-        f'<tbody>{table_rows}</tbody>'
-        '</table>'
-        '</section>'
+    return wrap_section_with_comment(
+        section_id="file-manifest",
+        title='<span class="marker sym-file">⊞</span>File manifest',
+        body=(
+            '<table class="file-manifest">'
+            '<thead><tr><th>Action</th><th>Path</th><th>Description</th></tr></thead>'
+            f'<tbody>{table_rows}</tbody>'
+            '</table>'
+        ),
     )
 
 
@@ -141,7 +166,6 @@ def render_diagrams(entries: list[dict]) -> str:
         desc = render_inline(entry.get("description", ""))
         mermaid_src = entry.get("mermaid", "")
         desc_html = f'<p class="diagram-desc">{desc}</p>' if desc else ""
-        # Mermaid div with a <pre> fallback for offline
         parts.append(
             f'<div class="diagram-block">'
             f'<h3 class="diagram-title">{title}</h3>'
@@ -151,11 +175,10 @@ def render_diagrams(entries: list[dict]) -> str:
             f'</div>'
         )
     blocks = "\n".join(parts)
-    return (
-        '<section class="section">'
-        '<h2 class="section-title"><span class="marker sym-diagram">◈</span>Diagrams</h2>'
-        f'{blocks}'
-        '</section>'
+    return wrap_section_with_comment(
+        section_id="diagrams",
+        title='<span class="marker sym-diagram">◈</span>Diagrams',
+        body=blocks,
     )
 
 
@@ -178,11 +201,10 @@ def render_tradeoffs(entries: list[dict]) -> str:
             f'</div></div>'
         )
     blocks = "\n".join(parts)
-    return (
-        '<section class="section">'
-        '<h2 class="section-title"><span class="marker sym-tradeoff">⇋</span>Tradeoffs</h2>'
-        f'{blocks}'
-        '</section>'
+    return wrap_section_with_comment(
+        section_id="tradeoffs",
+        title='<span class="marker sym-tradeoff">⇋</span>Tradeoffs',
+        body=blocks,
     )
 
 
@@ -206,21 +228,197 @@ def render_alternatives(entries: list[dict]) -> str:
             f'</div>'
         )
     blocks = "\n".join(parts)
-    return (
-        '<section class="section">'
-        '<h2 class="section-title"><span class="marker sym-alt">⊘</span>Alternatives considered</h2>'
-        f'{blocks}'
-        '</section>'
+    return wrap_section_with_comment(
+        section_id="alternatives",
+        title='<span class="marker sym-alt">⊘</span>Alternatives considered',
+        body=blocks,
     )
 
 
+# ---------- Free-form report sections ----------
+
+CARD_TONE_CLASSES = {
+    "good": "tone-good",
+    "info": "tone-info",
+    "warn": "tone-warn",
+    "high": "tone-high",
+    "critical": "tone-critical",
+    "medium": "tone-warn",
+    "low": "tone-info",
+}
+
+CALLOUT_VARIANT_CLASSES = {
+    "info": "callout-info",
+    "good": "callout-good",
+    "warn": "callout-warn",
+    "error": "callout-error",
+}
+
+
+def render_section_body(section: dict) -> str:
+    """Render the inner body of a free-form section based on `type`."""
+    stype = (section.get("type") or "prose").lower()
+
+    if stype == "prose":
+        return f'<div class="section-prose">{render_prose_body(section.get("body", ""))}</div>'
+
+    if stype == "bullets":
+        items = section.get("items", [])
+        if not items:
+            return '<div class="empty-row">—</div>'
+        parts = []
+        for item in items:
+            if isinstance(item, dict):
+                # Allow {title, body} for richer bullets
+                t = render_inline(item.get("title", ""))
+                b = render_inline(item.get("body", ""))
+                inner = f'<strong>{t}</strong> — {b}' if t and b else (t or b)
+            else:
+                inner = render_inline(str(item))
+            parts.append(
+                f'<div class="bullet-row">'
+                f'<span class="bullet-symbol sym-arrow">→</span>'
+                f'<span class="bullet-text">{inner}</span>'
+                f'</div>'
+            )
+        return "\n".join(parts)
+
+    if stype == "table":
+        cols = section.get("columns", [])
+        rows = section.get("rows", [])
+        thead = "".join(f"<th>{render_inline(str(c))}</th>" for c in cols)
+        tbody_rows = []
+        for r in rows:
+            if isinstance(r, dict):
+                # Allow {cells: [...]} or column-keyed dict
+                if "cells" in r:
+                    cells = r["cells"]
+                else:
+                    cells = [r.get(str(c), "") for c in cols]
+            else:
+                cells = r
+            tds = "".join(f"<td>{render_inline(str(c))}</td>" for c in cells)
+            tbody_rows.append(f"<tr>{tds}</tr>")
+        return (
+            '<table class="report-table">'
+            f'<thead><tr>{thead}</tr></thead>'
+            f'<tbody>{"".join(tbody_rows)}</tbody>'
+            '</table>'
+        )
+
+    if stype == "diagram":
+        title = html.escape(section.get("subtitle", "") or "")
+        desc = render_inline(section.get("description", ""))
+        mermaid_src = section.get("mermaid", "")
+        desc_html = f'<p class="diagram-desc">{desc}</p>' if desc else ""
+        sub_html = f'<h3 class="diagram-title">{title}</h3>' if title else ""
+        return (
+            f'<div class="diagram-block">'
+            f'{sub_html}'
+            f'{desc_html}'
+            f'<div class="mermaid">{html.escape(mermaid_src)}</div>'
+            f'<pre class="mermaid-fallback">{html.escape(mermaid_src)}</pre>'
+            f'</div>'
+        )
+
+    if stype == "callout":
+        variant = (section.get("variant") or "info").lower()
+        klass = CALLOUT_VARIANT_CLASSES.get(variant, "callout-info")
+        body = render_prose_body(section.get("body", ""))
+        return f'<div class="callout {klass}">{body}</div>'
+
+    if stype == "cards":
+        cards = section.get("cards", [])
+        if not cards:
+            return '<div class="empty-row">—</div>'
+        parts = []
+        for c in cards:
+            t = render_inline(c.get("title", ""))
+            b = render_inline(c.get("body", ""))
+            tone = (c.get("tone") or "info").lower()
+            tone_class = CARD_TONE_CLASSES.get(tone, "tone-info")
+            tone_label = html.escape(tone.upper())
+            parts.append(
+                f'<div class="report-card {tone_class}">'
+                f'<div class="report-card-head"><span class="report-card-title">{t}</span>'
+                f'<span class="tone-badge">{tone_label}</span></div>'
+                f'<div class="report-card-body">{b}</div>'
+                f'</div>'
+            )
+        return f'<div class="report-cards-grid">{"".join(parts)}</div>'
+
+    if stype == "raw_html":
+        # Escape hatch — use sparingly
+        return section.get("html", "")
+
+    return f'<div class="empty-row">unsupported section type: {html.escape(stype)}</div>'
+
+
+def render_sections(sections: list[dict]) -> str:
+    if not sections:
+        return ""
+    parts = []
+    for s in sections:
+        sid = s.get("id") or ""
+        title = render_inline(s.get("title", ""))
+        body = render_section_body(s)
+        parts.append(
+            wrap_section_with_comment(
+                section_id=sid,
+                title=title,
+                body=body,
+            )
+        )
+    return "\n".join(parts)
+
+
+# ---------- Comment widget plumbing ----------
+
+# A module-level toggle so wrap_section_with_comment knows whether to emit
+# the comment widget or omit it. Set in render_html() before any rendering.
+_COMMENTS_ENABLED = False
+
+
+def wrap_section_with_comment(section_id: str, title: str, body: str) -> str:
+    """Wrap a section's content in <section>, with an optional comment widget."""
+    sid = re.sub(r"[^a-zA-Z0-9_-]+", "-", section_id).strip("-") or "section"
+    title_html = title  # caller has already rendered HTML for marker + text
+    comment_html = ""
+    if _COMMENTS_ENABLED:
+        comment_html = (
+            f'<div class="comment-widget" data-section-id="{sid}">'
+            f'<button type="button" class="comment-toggle" aria-expanded="false">💬 Comment</button>'
+            f'<div class="comment-body" hidden>'
+            f'<textarea class="comment-textarea" data-section-id="{sid}" '
+            f'placeholder="Type your question or comment for this section…"></textarea>'
+            f'<div class="comment-meta"><span class="comment-saved-indicator" aria-live="polite"></span></div>'
+            f'</div>'
+            f'</div>'
+        )
+    return (
+        f'<section class="section" id="sec-{sid}" data-section-id="{sid}">'
+        f'<h2 class="section-title">{title_html}'
+        f'<a class="section-anchor" href="#sec-{sid}" title="permalink">¶</a>'
+        f'</h2>'
+        f'{body}'
+        f'{comment_html}'
+        f'</section>'
+    )
+
+
+# ---------- Top-level render ----------
+
 def render_html(plan: dict) -> str:
+    global _COMMENTS_ENABLED
+    _COMMENTS_ENABLED = bool(plan.get("comments_enabled", False))
+
     title = html.escape(plan.get("title", "Plan Visualization"))
     subtitle = render_inline(plan.get("subtitle", ""))
     profile = html.escape(plan.get("profile") or "PLAN")
     file_count = plan.get("file_count")
     step_count = plan.get("step_count")
     generated = html.escape(plan.get("generated") or date.today().isoformat())
+    report_id = html.escape(plan.get("report_id") or slugify(plan.get("title") or "report"))
 
     summary_parts = []
     if file_count is not None:
@@ -231,24 +429,96 @@ def render_html(plan: dict) -> str:
         summary_parts.append(f"{step_count} {label}")
     summary_line = html.escape(" · ".join(summary_parts)) if summary_parts else ""
 
-    before_html = render_column(plan.get("before", []))
-    after_html = render_column(plan.get("after", []))
+    # Plan-mode columns
+    before_items = plan.get("before", [])
+    after_items = plan.get("after", [])
+    columns_html = ""
+    if before_items or after_items:
+        before_html = render_column(before_items)
+        after_html = render_column(after_items)
+        columns_html = (
+            '<div class="columns">'
+            f'<section class="column" id="sec-before" data-section-id="before">'
+            f'<div class="column-head">Before</div>{before_html}'
+        )
+        if _COMMENTS_ENABLED:
+            columns_html += render_inline_comment_widget("before")
+        columns_html += (
+            f'</section>'
+            f'<section class="column" id="sec-after" data-section-id="after">'
+            f'<div class="column-head">After</div>{after_html}'
+        )
+        if _COMMENTS_ENABLED:
+            columns_html += render_inline_comment_widget("after")
+        columns_html += '</section></div>'
 
     file_manifest_html = render_file_manifest(plan.get("file_manifest", []))
     diagrams_html = render_diagrams(plan.get("diagrams", []))
 
-    key_changes_html = render_bullet_list(
-        plan.get("key_changes", []), "→", "sym-arrow"
-    )
+    # Free-form sections (report mode)
+    sections_html = render_sections(plan.get("sections", []))
+
+    # Plan-mode standard sections — only render if non-empty (avoid noisy empty boxes for reports)
+    key_changes_html = ""
+    if plan.get("key_changes"):
+        key_changes_html = wrap_section_with_comment(
+            section_id="key-changes",
+            title='<span class="marker sym-arrow">→</span>Key changes',
+            body=render_bullet_list(plan["key_changes"], "→", "sym-arrow"),
+        )
+
     tradeoffs_html = render_tradeoffs(plan.get("tradeoffs", []))
-    key_decisions_html = render_bullet_list(
-        plan.get("key_decisions", []), "◇", "sym-diamond"
-    )
+
+    key_decisions_html = ""
+    if plan.get("key_decisions"):
+        key_decisions_html = wrap_section_with_comment(
+            section_id="key-decisions",
+            title='<span class="marker sym-diamond">◇</span>Key decisions',
+            body=render_bullet_list(plan["key_decisions"], "◇", "sym-diamond"),
+        )
+
     alternatives_html = render_alternatives(plan.get("alternatives", []))
-    risks_html = render_bullet_list(plan.get("risks", []), "⚠", "sym-warn")
-    out_of_scope_html = render_bullet_list(
-        plan.get("out_of_scope", []), "✕", "sym-x"
-    )
+
+    risks_html = ""
+    if plan.get("risks"):
+        risks_html = wrap_section_with_comment(
+            section_id="risks",
+            title='<span class="marker sym-warn">⚠</span>Risks',
+            body=render_bullet_list(plan["risks"], "⚠", "sym-warn"),
+        )
+
+    out_of_scope_html = ""
+    if plan.get("out_of_scope"):
+        out_of_scope_html = wrap_section_with_comment(
+            section_id="out-of-scope",
+            title='<span class="marker sym-x">✕</span>Out of scope',
+            body=render_bullet_list(plan["out_of_scope"], "✕", "sym-x"),
+        )
+
+    # Floating export button only if comments enabled
+    floating_button_html = ""
+    if _COMMENTS_ENABLED:
+        floating_button_html = (
+            '<div id="export-bar">'
+            '<button type="button" id="export-btn">📋 Export comments</button>'
+            '<span id="export-count" class="export-count">0 comments</span>'
+            '</div>'
+            # Modal overlay
+            '<div id="export-modal" class="export-modal" hidden>'
+            '<div class="export-modal-inner">'
+            '<div class="export-modal-head">'
+            '<span class="export-modal-title">Comments &amp; questions</span>'
+            '<button type="button" class="export-modal-close" id="export-modal-close">×</button>'
+            '</div>'
+            '<textarea id="export-modal-text" readonly></textarea>'
+            '<div class="export-modal-actions">'
+            '<button type="button" id="export-copy-btn" class="export-action-btn">📋 Copy to clipboard</button>'
+            '<button type="button" id="export-download-btn" class="export-action-btn">💾 Download .md</button>'
+            '<button type="button" id="export-clear-btn" class="export-action-btn export-clear">🗑 Clear all</button>'
+            '</div>'
+            '</div>'
+            '</div>'
+        )
 
     return TEMPLATE.format(
         title=title,
@@ -256,16 +526,33 @@ def render_html(plan: dict) -> str:
         profile=profile,
         summary_line=summary_line,
         generated=generated,
-        before=before_html,
-        after=after_html,
+        report_id=report_id,
+        comments_enabled_js=("true" if _COMMENTS_ENABLED else "false"),
+        columns=columns_html,
         file_manifest=file_manifest_html,
         diagrams=diagrams_html,
+        sections=sections_html,
         key_changes=key_changes_html,
         tradeoffs=tradeoffs_html,
         key_decisions=key_decisions_html,
         alternatives=alternatives_html,
         risks=risks_html,
         out_of_scope=out_of_scope_html,
+        floating_button=floating_button_html,
+    )
+
+
+def render_inline_comment_widget(section_id: str) -> str:
+    sid = re.sub(r"[^a-zA-Z0-9_-]+", "-", section_id).strip("-") or "section"
+    return (
+        f'<div class="comment-widget" data-section-id="{sid}">'
+        f'<button type="button" class="comment-toggle" aria-expanded="false">💬 Comment</button>'
+        f'<div class="comment-body" hidden>'
+        f'<textarea class="comment-textarea" data-section-id="{sid}" '
+        f'placeholder="Type your question or comment for this section…"></textarea>'
+        f'<div class="comment-meta"><span class="comment-saved-indicator" aria-live="polite"></span></div>'
+        f'</div>'
+        f'</div>'
     )
 
 
@@ -293,6 +580,12 @@ TEMPLATE = """<!DOCTYPE html>
     --removed-bg: rgba(244,114,114,0.14);
     --unchanged: #8893a5;
     --unchanged-bg: rgba(136,147,165,0.14);
+    --info: #6ea8fe;
+    --info-bg: rgba(110,168,254,0.10);
+    --high: #ff7a59;
+    --high-bg: rgba(255,122,89,0.10);
+    --critical: #ff4d4d;
+    --critical-bg: rgba(255,77,77,0.12);
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }}
@@ -301,14 +594,14 @@ TEMPLATE = """<!DOCTYPE html>
     color: var(--text);
     font-family: var(--sans);
     font-size: 14px;
-    line-height: 1.5;
+    line-height: 1.55;
     margin: 0;
     padding: 0;
   }}
   .page {{
     max-width: 1200px;
     margin: 0 auto;
-    padding: 32px 32px 48px;
+    padding: 32px 32px 96px;
   }}
   .top {{
     display: flex;
@@ -320,14 +613,14 @@ TEMPLATE = """<!DOCTYPE html>
   }}
   .top-left h1 {{
     margin: 0 0 8px;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.01em;
   }}
   .top-left .subtitle {{
     color: var(--muted);
-    font-size: 13px;
-    max-width: 780px;
+    font-size: 13.5px;
+    max-width: 820px;
   }}
   .top-right {{
     text-align: right;
@@ -347,18 +640,14 @@ TEMPLATE = """<!DOCTYPE html>
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }}
-  .summary-line {{
+  .summary-line, .gen-line {{
     color: var(--muted);
     font-size: 11px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }}
-  .gen-line {{
-    color: var(--dim);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }}
+  .gen-line {{ color: var(--dim); }}
+
   .legend {{
     display: flex;
     align-items: center;
@@ -369,20 +658,9 @@ TEMPLATE = """<!DOCTYPE html>
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }}
-  .legend .legend-label {{
-    color: var(--dim);
-  }}
-  .legend .chip {{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-  }}
-  .chip .dot {{
-    width: 10px;
-    height: 10px;
-    border-radius: 3px;
-    display: inline-block;
-  }}
+  .legend .legend-label {{ color: var(--dim); }}
+  .legend .chip {{ display: inline-flex; align-items: center; gap: 8px; }}
+  .chip .dot {{ width: 10px; height: 10px; border-radius: 3px; display: inline-block; }}
   .dot.added {{ background: var(--added); }}
   .dot.changed {{ background: var(--changed); }}
   .dot.removed {{ background: var(--removed); }}
@@ -392,13 +670,14 @@ TEMPLATE = """<!DOCTYPE html>
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 20px;
-    margin-bottom: 28px;
+    margin-bottom: 20px;
   }}
   .column {{
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 18px 18px 8px;
+    padding: 18px 18px 12px;
+    position: relative;
   }}
   .column-head {{
     font-size: 11px;
@@ -451,23 +730,11 @@ TEMPLATE = """<!DOCTYPE html>
   .badge-unchanged{{ color: var(--unchanged);background: var(--unchanged-bg);border-color: rgba(136,147,165,0.35); }}
 
   .card-details {{
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 12.5px;
-    color: #c3cbd8;
+    list-style: none; padding: 0; margin: 0;
+    font-size: 12.5px; color: #c3cbd8;
   }}
-  .card-details li {{
-    padding: 2px 0 2px 14px;
-    position: relative;
-  }}
-  .card-details li::before {{
-    content: "·";
-    color: var(--dim);
-    position: absolute;
-    left: 4px;
-    font-weight: 700;
-  }}
+  .card-details li {{ padding: 2px 0 2px 14px; position: relative; }}
+  .card-details li::before {{ content: "·"; color: var(--dim); position: absolute; left: 4px; font-weight: 700; }}
   code.inline {{
     font-family: var(--mono);
     font-size: 11.5px;
@@ -477,65 +744,61 @@ TEMPLATE = """<!DOCTYPE html>
     border-radius: 3px;
     border: 1px solid rgba(110,168,254,0.15);
   }}
+  strong {{ color: #f4f7fb; font-weight: 600; }}
 
   .section {{
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 16px 20px;
-    margin-top: 16px;
+    padding: 18px 22px;
+    margin-top: 18px;
+    position: relative;
   }}
   .section-title {{
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 0 0 12px;
-    font-size: 11px;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--muted);
+    margin: 0 0 14px;
+    font-size: 13.5px;
+    letter-spacing: 0.04em;
+    color: var(--text);
+    font-weight: 600;
   }}
-  .section-title .marker {{
-    font-size: 14px;
-    line-height: 1;
-  }}
-  .bullet-row {{
-    display: flex;
-    gap: 10px;
-    padding: 4px 0;
-    font-size: 13px;
-    color: #d0d7e3;
-  }}
-  .bullet-symbol {{
-    flex-shrink: 0;
-    width: 16px;
-    text-align: center;
-    font-weight: 700;
-  }}
-  .sym-arrow {{ color: var(--added); }}
-  .sym-diamond {{ color: #6ea8fe; }}
-  .sym-warn {{ color: var(--changed); }}
-  .sym-x {{ color: var(--removed); }}
-  .bullet-text {{
-    flex: 1;
-  }}
-  .mitigation {{
-    color: var(--muted);
-    font-style: italic;
-  }}
-  .empty-row {{
+  .section-title .marker {{ font-size: 16px; line-height: 1; }}
+  .section-anchor {{
     color: var(--dim);
-    font-size: 12px;
-    padding: 4px 0;
+    text-decoration: none;
+    margin-left: 6px;
+    opacity: 0;
+    transition: opacity 120ms;
+    font-weight: 400;
   }}
+  .section:hover .section-anchor {{ opacity: 1; }}
 
-  /* File manifest table */
-  .file-manifest {{
+  .section-prose .prose-p {{
+    margin: 0 0 12px;
+    color: #d0d7e3;
+    font-size: 13.5px;
+  }}
+  .section-prose .prose-p:last-child {{ margin-bottom: 0; }}
+
+  .bullet-row {{ display: flex; gap: 10px; padding: 4px 0; font-size: 13px; color: #d0d7e3; }}
+  .bullet-symbol {{ flex-shrink: 0; width: 16px; text-align: center; font-weight: 700; }}
+  .sym-arrow   {{ color: var(--added); }}
+  .sym-diamond {{ color: #6ea8fe; }}
+  .sym-warn    {{ color: var(--changed); }}
+  .sym-x       {{ color: var(--removed); }}
+  .bullet-text {{ flex: 1; }}
+  .mitigation  {{ color: var(--muted); font-style: italic; }}
+  .empty-row   {{ color: var(--dim); font-size: 12px; padding: 4px 0; }}
+
+  /* File manifest + report tables */
+  .file-manifest, .report-table {{
     width: 100%;
     border-collapse: collapse;
     font-size: 13px;
   }}
-  .file-manifest th {{
+  .file-manifest th, .report-table th {{
     text-align: left;
     color: var(--dim);
     font-size: 11px;
@@ -544,18 +807,14 @@ TEMPLATE = """<!DOCTYPE html>
     padding: 6px 10px;
     border-bottom: 1px solid var(--border);
   }}
-  .file-manifest td {{
+  .file-manifest td, .report-table td {{
     padding: 8px 10px;
     border-bottom: 1px solid var(--border);
-    vertical-align: middle;
+    vertical-align: top;
   }}
-  .file-manifest tr:last-child td {{
-    border-bottom: none;
-  }}
-  .fm-desc {{
-    color: var(--muted);
-    font-size: 12.5px;
-  }}
+  .file-manifest tr:last-child td,
+  .report-table tr:last-child td {{ border-bottom: none; }}
+  .fm-desc {{ color: var(--muted); font-size: 12.5px; }}
   .sym-file {{ color: #6ea8fe; }}
 
   /* Diagrams */
@@ -567,21 +826,9 @@ TEMPLATE = """<!DOCTYPE html>
     padding: 16px;
     margin-bottom: 12px;
   }}
-  .diagram-title {{
-    font-size: 13px;
-    font-weight: 600;
-    margin: 0 0 6px;
-    color: var(--text);
-  }}
-  .diagram-desc {{
-    font-size: 12.5px;
-    color: var(--muted);
-    margin: 0 0 12px;
-  }}
-  .mermaid {{
-    text-align: center;
-    background: transparent;
-  }}
+  .diagram-title {{ font-size: 13px; font-weight: 600; margin: 0 0 6px; color: var(--text); }}
+  .diagram-desc  {{ font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }}
+  .mermaid {{ text-align: center; background: transparent; }}
   .mermaid-fallback {{
     display: none;
     font-family: var(--mono);
@@ -604,44 +851,14 @@ TEMPLATE = """<!DOCTYPE html>
     padding: 14px 16px;
     margin-bottom: 12px;
   }}
-  .tradeoff-decision {{
-    font-weight: 600;
-    font-size: 13px;
-    margin-bottom: 10px;
-    color: var(--text);
-  }}
-  .tradeoff-columns {{
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }}
-  .tradeoff-col-head {{
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-    font-weight: 600;
-  }}
+  .tradeoff-decision {{ font-weight: 600; font-size: 13px; margin-bottom: 10px; color: var(--text); }}
+  .tradeoff-columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+  .tradeoff-col-head {{ font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; font-weight: 600; }}
   .pro-head {{ color: var(--added); }}
   .con-head {{ color: var(--removed); }}
-  .tradeoff-list {{
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 12.5px;
-  }}
-  .tradeoff-list li {{
-    padding: 2px 0 2px 14px;
-    position: relative;
-    color: #c3cbd8;
-  }}
-  .tradeoff-list li::before {{
-    content: "·";
-    color: var(--dim);
-    position: absolute;
-    left: 4px;
-    font-weight: 700;
-  }}
+  .tradeoff-list {{ list-style: none; padding: 0; margin: 0; font-size: 12.5px; }}
+  .tradeoff-list li {{ padding: 2px 0 2px 14px; position: relative; color: #c3cbd8; }}
+  .tradeoff-list li::before {{ content: "·"; color: var(--dim); position: absolute; left: 4px; font-weight: 700; }}
   .pro-item {{ color: rgba(63,185,80,0.85); }}
   .con-item {{ color: rgba(244,114,114,0.85); }}
 
@@ -654,36 +871,239 @@ TEMPLATE = """<!DOCTYPE html>
     padding: 14px 16px;
     margin-bottom: 12px;
   }}
-  .alt-title {{
-    font-weight: 600;
-    font-size: 13px;
-    color: var(--text);
-    margin-bottom: 4px;
+  .alt-title {{ font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 4px; }}
+  .alt-desc  {{ font-size: 12.5px; color: #c3cbd8; margin-bottom: 6px; }}
+  .alt-rejected {{ font-size: 12px; color: var(--muted); font-style: italic; }}
+  .alt-rejected-label {{ color: var(--removed); font-style: normal; font-weight: 600; }}
+
+  /* Callouts */
+  .callout {{
+    border-left: 3px solid;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 4px 0;
   }}
-  .alt-desc {{
-    font-size: 12.5px;
-    color: #c3cbd8;
+  .callout-info  {{ border-color: var(--info);     background: var(--info-bg); }}
+  .callout-good  {{ border-color: var(--added);    background: var(--added-bg); }}
+  .callout-warn  {{ border-color: var(--changed);  background: var(--changed-bg); }}
+  .callout-error {{ border-color: var(--removed);  background: var(--removed-bg); }}
+  .callout .prose-p:last-child {{ margin-bottom: 0; }}
+
+  /* Cards grid (report mode) */
+  .report-cards-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }}
+  .report-card {{
+    background: var(--panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    border-left-width: 3px;
+  }}
+  .report-card-head {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
     margin-bottom: 6px;
   }}
-  .alt-rejected {{
-    font-size: 12px;
+  .report-card-title {{ font-weight: 600; font-size: 13px; color: var(--text); }}
+  .report-card-body  {{ font-size: 12.5px; color: #c3cbd8; }}
+  .tone-badge {{
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+  }}
+  .tone-good     {{ border-left-color: var(--added);  }}
+  .tone-good     .tone-badge {{ color: var(--added);    background: var(--added-bg);    border-color: rgba(63,185,80,0.35); }}
+  .tone-info     {{ border-left-color: var(--info);    }}
+  .tone-info     .tone-badge {{ color: var(--info);     background: var(--info-bg);     border-color: rgba(110,168,254,0.35); }}
+  .tone-warn     {{ border-left-color: var(--changed); }}
+  .tone-warn     .tone-badge {{ color: var(--changed);  background: var(--changed-bg);  border-color: rgba(245,176,65,0.35); }}
+  .tone-high     {{ border-left-color: var(--high);    }}
+  .tone-high     .tone-badge {{ color: var(--high);     background: var(--high-bg);     border-color: rgba(255,122,89,0.40); }}
+  .tone-critical {{ border-left-color: var(--critical);}}
+  .tone-critical .tone-badge {{ color: var(--critical); background: var(--critical-bg); border-color: rgba(255,77,77,0.45);  }}
+
+  /* Comment widget */
+  .comment-widget {{
+    margin-top: 16px;
+    border-top: 1px dashed var(--border);
+    padding-top: 12px;
+  }}
+  .comment-toggle {{
+    background: transparent;
     color: var(--muted);
-    font-style: italic;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: border-color 120ms, color 120ms, background 120ms;
   }}
-  .alt-rejected-label {{
-    color: var(--removed);
-    font-style: normal;
+  .comment-toggle:hover {{ color: var(--text); border-color: var(--info); }}
+  .comment-toggle.has-comment {{ color: var(--info); border-color: var(--info); }}
+  .comment-body {{ margin-top: 10px; }}
+  .comment-textarea {{
+    width: 100%;
+    min-height: 80px;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+  }}
+  .comment-textarea:focus {{ outline: none; border-color: var(--info); }}
+  .comment-meta {{
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+    min-height: 16px;
+  }}
+  .comment-saved-indicator {{
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }}
+
+  /* Floating export bar */
+  #export-bar {{
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 100;
+  }}
+  #export-btn {{
+    background: var(--info);
+    color: #0a0d12;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 13px;
     font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 120ms, box-shadow 120ms;
   }}
+  #export-btn:hover {{
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+  }}
+  #export-btn:disabled {{
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }}
+  .export-count {{
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    color: var(--muted);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+  }}
+
+  /* Modal — note `display: flex` only when NOT hidden, otherwise the
+     `hidden` attribute cannot hide the overlay. Without the `:not([hidden])`
+     selector, this rule wins over the UA `[hidden] {{ display: none }}` rule
+     (specificity 0,1,0 vs 0,0,1) and the modal stays open on load. */
+  .export-modal:not([hidden]) {{
+    display: flex;
+  }}
+  .export-modal {{
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }}
+  .export-modal-inner {{
+    width: min(720px, 90vw);
+    max-height: 80vh;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }}
+  .export-modal-head {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }}
+  .export-modal-title {{ font-size: 14px; font-weight: 600; color: var(--text); }}
+  .export-modal-close {{
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+  }}
+  .export-modal-close:hover {{ color: var(--text); }}
+  #export-modal-text {{
+    width: 100%;
+    flex: 1;
+    min-height: 280px;
+    box-sizing: border-box;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    resize: vertical;
+  }}
+  .export-modal-actions {{
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }}
+  .export-action-btn {{
+    background: var(--panel-alt);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: border-color 120ms, color 120ms;
+  }}
+  .export-action-btn:hover {{ border-color: var(--info); color: var(--info); }}
+  .export-clear:hover {{ border-color: var(--removed); color: var(--removed); }}
 
   @media (max-width: 820px) {{
     .columns {{ grid-template-columns: 1fr; }}
     .top {{ flex-direction: column; align-items: flex-start; }}
     .top-right {{ align-items: flex-start; text-align: left; }}
+    #export-bar {{ bottom: 12px; right: 12px; }}
   }}
 </style>
 </head>
-<body>
+<body data-comments-enabled="{comments_enabled_js}" data-report-id="{report_id}">
   <div class="page">
     <header class="top">
       <div class="top-left">
@@ -705,76 +1125,261 @@ TEMPLATE = """<!DOCTYPE html>
       <span class="chip"><span class="dot unchanged"></span>Unchanged</span>
     </div>
 
-    <div class="columns">
-      <section class="column">
-        <div class="column-head">Before</div>
-        {before}
-      </section>
-      <section class="column">
-        <div class="column-head">After</div>
-        {after}
-      </section>
-    </div>
+    {columns}
 
     {file_manifest}
 
     {diagrams}
 
-    <section class="section">
-      <h2 class="section-title"><span class="marker sym-arrow">→</span>Key changes</h2>
-      {key_changes}
-    </section>
+    {sections}
+
+    {key_changes}
 
     {tradeoffs}
 
-    <section class="section">
-      <h2 class="section-title"><span class="marker sym-diamond">◇</span>Key decisions</h2>
-      {key_decisions}
-    </section>
+    {key_decisions}
 
     {alternatives}
 
-    <section class="section">
-      <h2 class="section-title"><span class="marker sym-warn">⚠</span>Risks</h2>
-      {risks}
-    </section>
+    {risks}
 
-    <section class="section">
-      <h2 class="section-title"><span class="marker sym-x">✕</span>Out of scope</h2>
-      {out_of_scope}
-    </section>
+    {out_of_scope}
   </div>
+
+  {floating_button}
+
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script>
-    document.addEventListener('DOMContentLoaded', function() {{
+    (function() {{
+      // ---- Mermaid init ----
       var mermaidBlocks = document.querySelectorAll('.mermaid');
-      if (mermaidBlocks.length === 0) return;
-      try {{
-        mermaid.initialize({{
-          startOnLoad: true,
-          theme: 'dark',
-          themeVariables: {{
-            primaryColor: '#182030',
-            primaryTextColor: '#e6ebf2',
-            primaryBorderColor: '#2f3a4c',
-            lineColor: '#5b6778',
-            secondaryColor: '#131922',
-            tertiaryColor: '#0b0f14',
-            fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
-            fontSize: '13px'
-          }}
-        }});
-      }} catch (e) {{
-        // Mermaid failed to load (offline?) — show fallback code blocks
+      if (mermaidBlocks.length > 0 && typeof mermaid !== 'undefined') {{
+        try {{
+          mermaid.initialize({{
+            startOnLoad: true,
+            theme: 'dark',
+            themeVariables: {{
+              primaryColor: '#182030',
+              primaryTextColor: '#e6ebf2',
+              primaryBorderColor: '#2f3a4c',
+              lineColor: '#5b6778',
+              secondaryColor: '#131922',
+              tertiaryColor: '#0b0f14',
+              fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
+              fontSize: '13px'
+            }}
+          }});
+        }} catch (e) {{
+          mermaidBlocks.forEach(function(el) {{
+            el.style.display = 'none';
+            var fb = el.nextElementSibling;
+            if (fb && fb.classList.contains('mermaid-fallback')) fb.style.display = 'block';
+          }});
+        }}
+      }} else if (mermaidBlocks.length > 0) {{
         mermaidBlocks.forEach(function(el) {{
           el.style.display = 'none';
-          var fallback = el.nextElementSibling;
-          if (fallback && fallback.classList.contains('mermaid-fallback')) {{
-            fallback.style.display = 'block';
+          var fb = el.nextElementSibling;
+          if (fb && fb.classList.contains('mermaid-fallback')) fb.style.display = 'block';
+        }});
+      }}
+
+      // ---- Comments ----
+      var enabled = document.body.getAttribute('data-comments-enabled') === 'true';
+      if (!enabled) return;
+      var reportId = document.body.getAttribute('data-report-id') || 'report';
+      var storageKey = 'planviz:' + reportId;
+
+      function loadComments() {{
+        try {{ return JSON.parse(localStorage.getItem(storageKey) || '{{}}'); }}
+        catch (e) {{ return {{}}; }}
+      }}
+      function saveComments(map) {{
+        try {{ localStorage.setItem(storageKey, JSON.stringify(map)); }}
+        catch (e) {{}}
+      }}
+      function updateExportCount() {{
+        var map = loadComments();
+        var n = Object.keys(map).filter(function(k) {{ return (map[k] || '').trim().length > 0; }}).length;
+        var el = document.getElementById('export-count');
+        var btn = document.getElementById('export-btn');
+        if (el) el.textContent = n + (n === 1 ? ' comment' : ' comments');
+        if (btn) btn.disabled = (n === 0);
+      }}
+
+      // Hydrate textareas + wire up events
+      // Comment widgets are ALWAYS collapsed by default, even when a saved
+      // comment exists. The button gets a `has-comment` class as a visual
+      // indicator, and the textarea is hydrated so the value is there when
+      // the user re-opens it. Toggling is purely on click.
+      var data = loadComments();
+      var widgets = document.querySelectorAll('.comment-widget');
+      widgets.forEach(function(w) {{
+        var sid = w.getAttribute('data-section-id');
+        var btn = w.querySelector('.comment-toggle');
+        var body = w.querySelector('.comment-body');
+        var ta = w.querySelector('.comment-textarea');
+        var indicator = w.querySelector('.comment-saved-indicator');
+
+        // Hydrate value + indicator class, but DO NOT auto-open.
+        if (data[sid]) {{
+          ta.value = data[sid];
+          btn.classList.add('has-comment');
+          btn.textContent = '💬 Comment (saved)';
+        }}
+        // Always start collapsed.
+        body.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+
+        btn.addEventListener('click', function(e) {{
+          e.preventDefault();
+          var isHidden = body.hidden;
+          if (isHidden) {{
+            body.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+            ta.focus();
+          }} else {{
+            body.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+          }}
+        }});
+
+        var saveTimer = null;
+        ta.addEventListener('input', function() {{
+          if (saveTimer) clearTimeout(saveTimer);
+          if (indicator) indicator.textContent = 'saving…';
+          saveTimer = setTimeout(function() {{
+            var map = loadComments();
+            var v = ta.value.trim();
+            if (v) {{
+              map[sid] = ta.value;
+              btn.classList.add('has-comment');
+              btn.textContent = '💬 Comment (saved)';
+            }} else {{
+              delete map[sid];
+              btn.classList.remove('has-comment');
+              btn.textContent = '💬 Comment';
+            }}
+            saveComments(map);
+            if (indicator) {{
+              indicator.textContent = 'saved';
+              setTimeout(function() {{ if (indicator.textContent === 'saved') indicator.textContent = ''; }}, 1200);
+            }}
+            updateExportCount();
+          }}, 350);
+        }});
+      }});
+
+      updateExportCount();
+
+      // ---- Export modal ----
+      var exportBtn = document.getElementById('export-btn');
+      var modal = document.getElementById('export-modal');
+      var modalText = document.getElementById('export-modal-text');
+      var closeBtn = document.getElementById('export-modal-close');
+      var copyBtn = document.getElementById('export-copy-btn');
+      var dlBtn = document.getElementById('export-download-btn');
+      var clearBtn = document.getElementById('export-clear-btn');
+
+      function buildExport() {{
+        var map = loadComments();
+        var lines = [];
+        var title = document.querySelector('h1') ? document.querySelector('h1').textContent.trim() : 'Report';
+        var dateStr = new Date().toISOString().slice(0, 10);
+        lines.push('# Comments — ' + title);
+        lines.push('');
+        lines.push('_Generated_: ' + dateStr);
+        lines.push('_Report_: `' + reportId + '`');
+        lines.push('');
+
+        // Walk sections in DOM order so the export matches the report layout
+        var seen = {{}};
+        var sections = document.querySelectorAll('[data-section-id]');
+        var any = false;
+        sections.forEach(function(sec) {{
+          var sid = sec.getAttribute('data-section-id');
+          if (!sid || seen[sid]) return;
+          seen[sid] = true;
+          var c = (map[sid] || '').trim();
+          if (!c) return;
+
+          // Find an appropriate heading: prefer h1/h2/h3 inside, fall back to data-section-id
+          var heading = '';
+          var hEl = sec.querySelector('.section-title, h1, h2, h3, .column-head');
+          if (hEl) heading = hEl.textContent.replace(/¶$/, '').trim();
+          if (!heading) heading = sid;
+
+          any = true;
+          lines.push('## ' + heading);
+          lines.push('');
+          lines.push(c);
+          lines.push('');
+        }});
+
+        if (!any) {{
+          lines.push('_(no comments yet)_');
+        }}
+        return lines.join('\\n');
+      }}
+
+      if (exportBtn) {{
+        exportBtn.addEventListener('click', function() {{
+          modalText.value = buildExport();
+          modal.hidden = false;
+          modalText.focus();
+          modalText.select();
+        }});
+      }}
+      if (closeBtn) closeBtn.addEventListener('click', function() {{ modal.hidden = true; }});
+      if (modal) modal.addEventListener('click', function(e) {{ if (e.target === modal) modal.hidden = true; }});
+
+      if (copyBtn) {{
+        copyBtn.addEventListener('click', function() {{
+          var txt = modalText.value;
+          if (navigator.clipboard) {{
+            navigator.clipboard.writeText(txt).then(function() {{
+              copyBtn.textContent = '✓ Copied';
+              setTimeout(function() {{ copyBtn.textContent = '📋 Copy to clipboard'; }}, 1400);
+            }});
+          }} else {{
+            modalText.select(); document.execCommand('copy');
+            copyBtn.textContent = '✓ Copied';
+            setTimeout(function() {{ copyBtn.textContent = '📋 Copy to clipboard'; }}, 1400);
           }}
         }});
       }}
-    }});
+
+      if (dlBtn) {{
+        dlBtn.addEventListener('click', function() {{
+          var blob = new Blob([modalText.value], {{ type: 'text/markdown' }});
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = reportId + '-comments.md';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }});
+      }}
+
+      if (clearBtn) {{
+        clearBtn.addEventListener('click', function() {{
+          if (!confirm('Clear all comments? This cannot be undone.')) return;
+          localStorage.removeItem(storageKey);
+          document.querySelectorAll('.comment-textarea').forEach(function(ta) {{ ta.value = ''; }});
+          document.querySelectorAll('.comment-toggle').forEach(function(b) {{
+            b.classList.remove('has-comment');
+            b.textContent = '💬 Comment';
+          }});
+          // Re-collapse all widgets
+          document.querySelectorAll('.comment-body').forEach(function(b) {{ b.hidden = true; }});
+          document.querySelectorAll('.comment-toggle').forEach(function(b) {{ b.setAttribute('aria-expanded', 'false'); }});
+          modal.hidden = true;
+          updateExportCount();
+        }});
+      }}
+    }})();
   </script>
 </body>
 </html>
@@ -797,12 +1402,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "input",
-        help='Path to plan JSON file, or "-" to read JSON from stdin.',
+        help='Path to plan/report JSON file, or "-" to read JSON from stdin.',
     )
     parser.add_argument(
         "-o",
         "--output",
-        help="Path to write the HTML file. Default: system temp dir with a slug from the plan title.",
+        help="Path to write the HTML file. Default: system temp dir with a slug from the title.",
     )
     parser.add_argument(
         "--no-open",
@@ -814,7 +1419,7 @@ def main() -> int:
     try:
         plan = load_plan(args.input)
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"error: could not load plan JSON: {exc}", file=sys.stderr)
+        print(f"error: could not load JSON: {exc}", file=sys.stderr)
         return 1
 
     html_content = render_html(plan)

@@ -1,25 +1,81 @@
 ---
 name: plan-visualizer
-description: Turns a Claude Code markdown plan into a visual HTML infographic so a human can actually review it before approving. Use this whenever the user asks to "visualize a plan", "show me the plan visually", "make an infographic / diagram of this plan", "review the plan as a picture", or wants a BEFORE/AFTER architecture view of a plan. Also use it when the user has just received a long markdown plan from plan mode / ExitPlanMode and wants an easier way to evaluate it before hitting approve. The output is a dark-themed HTML page with BEFORE/AFTER panels, color-coded ADDED/CHANGED/REMOVED/UNCHANGED badges, key changes, decisions, risks, and out-of-scope sections, and it opens automatically in the default browser via `file://`.
-compatibility: Requires Python 3.8+ on PATH. Uses only the Python standard library. No network access needed.
+description: Turns a Claude Code markdown plan, audit/review report, or investigation document into a visual HTML page. Use this whenever the user asks to "visualize a plan", "show me the plan visually", "make an infographic / diagram of this plan", "review as a picture", "render this report", "make this audit easier to read", or wants a BEFORE/AFTER architecture view. Two modes are supported: (1) plan mode — BEFORE/AFTER columns + ADDED/CHANGED/REMOVED badges + file manifest, and (2) report mode — free-form sections with prose, bullets, tables, callouts, and Mermaid diagrams. Both modes can render with a per-section comment box and an "Export comments" button that produces a Markdown-formatted Q&A document the user can paste back into the conversation. The output is a dark-themed HTML page that opens automatically in the default browser via `file://`.
+compatibility: Requires Python 3.8+ on PATH. Uses only the Python standard library. No network access needed (Mermaid is loaded from CDN with a code-block fallback if offline).
 ---
 
-# Plan Visualizer
+# Plan / Report Visualizer
 
-Use this skill to turn a markdown plan (the kind Claude produces in plan mode, or any "here's what I'm going to change" proposal) into a single-page HTML infographic. The point is to make architectural intent visible at a glance so the user can actually review the plan instead of skimming a 200-line markdown dump.
+Use this skill to turn a markdown plan, audit, review, or investigation document into a single-page HTML page. The point is to make intent and findings visible at a glance so the user can review (and comment) instead of skimming a 200-line markdown dump.
 
 ## When to use
 
-Trigger this any time the user wants a plan rendered visually. Common phrasings:
+Trigger this any time the user wants a markdown document rendered visually for review. Common phrasings:
 
+**Plan mode (architectural changes / proposals):**
 - "visualize this plan"
 - "show me the plan as a picture / diagram / infographic"
 - "make the plan easier to review"
 - "BEFORE/AFTER view of what you'd change"
 - "render this plan so I can see it"
-- "I don't want to read another 200-line markdown, show it to me visually"
+
+**Report mode (audits, reviews, investigations):**
+- "make this audit/review/investigation easier to read"
+- "render this report visually"
+- "I want to leave comments on each section"
+- "give me a report I can comment on and export questions back"
+- "convert this long markdown into something I can scan"
 
 If the user just approved or rejected a plan without review and is complaining about rubber-stamping, that's also a signal to offer this skill.
+
+## Two modes — pick one (or both)
+
+The script supports two top-level shapes:
+
+1. **Plan mode** — BEFORE/AFTER columns + ADDED/CHANGED/REMOVED badges + file manifest. Best for "here's what I'd change" proposals. Use the `before` / `after` / `file_manifest` fields.
+2. **Report mode** — free-form sections, each with a type (`prose`, `bullets`, `table`, `diagram`, `callout`, `cards`). Best for audits, reviews, investigations, post-incident write-ups. Use the `sections` array.
+
+You can combine them — a JSON with both `before`/`after` AND `sections` will render both. But typically one mode dominates per document.
+
+## Comments + export Q&A
+
+If you set `comments_enabled: true`, every rendered section gets a small "💬 Comment" toggle button.
+
+### Comment widget behavior — must match this exactly
+
+- **Always collapsed by default.** When the page loads, every comment textarea is hidden, regardless of whether the user already wrote a comment in a previous session.
+- **Click the button to open** the textarea (auto-focuses it for typing).
+- **Click the button again to close** the textarea (the value stays — it's just hidden).
+- **The button label changes to "💬 Comment (saved)"** when there's a non-empty comment, and gets a `.has-comment` CSS class for the colored border. It reverts to plain "💬 Comment" if the user clears the text.
+- **Comments persist in `localStorage`** keyed by `report_id`. They survive page reloads but the widget always starts collapsed.
+- The textarea autosaves with a 350ms debounce. A "saved" indicator briefly appears.
+
+This collapse-by-default behavior is intentional — it keeps the page scannable and prevents the report from looking cluttered when the user already left comments. Do not change it without an explicit ask from the user.
+
+### Export bar
+
+A floating "📋 Export comments" button at the bottom-right collects every non-empty comment into a Markdown document. Three actions:
+
+- **Copy to clipboard** — copies the export text. Use this when pasting back into a chat.
+- **Download .md** — saves the export as `<report_id>-comments.md`.
+- **Clear all** — wipes localStorage for this report and re-collapses every widget.
+
+The export walks sections in DOM order, picks each section's heading, and produces:
+
+```markdown
+# Comments — <report title>
+
+_Generated_: 2026-04-28
+_Report_: `<report_id>`
+
+## Section heading
+<user's comment text>
+
+## Another section
+<another comment>
+```
+
+Default is `comments_enabled: false` (silent — no comment widgets, no export bar).
 
 ## The core flow
 
@@ -39,12 +95,15 @@ Your job is to turn a loose markdown plan into a structured JSON object matching
 
 ```json
 {
-  "title": "Short imperative title of the plan",
-  "subtitle": "1-2 sentence description of what this plan accomplishes and why. Supports `backtick code` spans.",
+  "title": "Short title of the plan or report",
+  "subtitle": "1-2 sentence description. Supports `backtick code` spans.",
   "profile": "STANDARD PROFILE",
   "file_count": 8,
   "step_count": 5,
   "generated": "2026-04-17",
+
+  "comments_enabled": false,
+  "report_id": "ezbob-audit-2026-04-28",
 
   "before": [
     {
@@ -80,6 +139,54 @@ Your job is to turn a loose markdown plan into a structured JSON object matching
     }
   ],
 
+  "sections": [
+    {
+      "id": "tldr",
+      "title": "TL;DR",
+      "type": "prose",
+      "body": "1–2 paragraphs of plain text. Supports `code` and **bold**.\n\nUse blank lines for paragraph breaks."
+    },
+    {
+      "id": "findings",
+      "title": "Top findings",
+      "type": "bullets",
+      "items": ["First finding with `code`", "Second finding"]
+    },
+    {
+      "id": "comparison",
+      "title": "Claim vs reality",
+      "type": "table",
+      "columns": ["Claim", "Status", "Notes"],
+      "rows": [
+        ["Repo X exists", "✅", "On disk"],
+        ["Repo Y exists", "❌", "Missing"]
+      ]
+    },
+    {
+      "id": "flow",
+      "title": "End-to-end flow",
+      "type": "diagram",
+      "description": "How a PR becomes a deploy.",
+      "mermaid": "graph LR\n  A --> B --> C"
+    },
+    {
+      "id": "warning",
+      "title": "Single point of failure",
+      "type": "callout",
+      "variant": "warn",
+      "body": "GITOPS_PAT is a manually-rotated classic PAT bound to one machine user."
+    },
+    {
+      "id": "risks-grid",
+      "title": "Risk dashboard",
+      "type": "cards",
+      "cards": [
+        { "title": "Risk A", "tone": "high", "body": "..." },
+        { "title": "Risk B", "tone": "medium", "body": "..." }
+      ]
+    }
+  ],
+
   "key_changes":   ["One-line summary of a major change", "..."],
 
   "tradeoffs": [
@@ -107,6 +214,18 @@ Your job is to turn a loose markdown plan into a structured JSON object matching
   "out_of_scope":  ["Things explicitly NOT done in this plan", "..."]
 }
 ```
+
+### Section types (report mode)
+
+The `sections` array is rendered in order. Each entry is one of:
+
+- **`prose`** — `{ id, title, type: "prose", body: "Markdown-ish text..." }`. Body is escaped, then `\`code\`` and `**bold**` are processed, then blank lines split into paragraphs.
+- **`bullets`** — `{ id, title, type: "bullets", items: ["...", "..."] }`. Same inline rendering as prose.
+- **`table`** — `{ id, title, type: "table", columns: [...], rows: [[...], [...]] }`. Each row is an array of cells matching `columns` length. Cells render with inline `code` and `**bold**`.
+- **`diagram`** — `{ id, title, type: "diagram", description?: "...", mermaid: "..." }`. Same as the existing `diagrams` field but inline within a section.
+- **`callout`** — `{ id, title, type: "callout", variant: "info|good|warn|error", body: "..." }`. A tinted box for emphasis.
+- **`cards`** — `{ id, title, type: "cards", cards: [{ title, body, tone?: "good|info|warn|high|critical" }] }`. Grid of small cards, useful for risk dashboards or finding tiles.
+- **`raw_html`** — `{ id, title, type: "raw_html", html: "..." }`. Escape hatch. Use sparingly.
 
 ### Field notes
 
