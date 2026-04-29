@@ -50,6 +50,8 @@ STATUS_META = {
     "?": ("UNTRACKED", "badge-unchanged", "?"),
 }
 
+_COMMENTS_ENABLED = False
+
 
 @dataclass
 class DiffLine:
@@ -510,14 +512,30 @@ def render_file_detail(fc: FileChange) -> str:
         )
     )
 
+    comment_widget = ""
+    if _COMMENTS_ENABLED:
+        sid = fc.anchor
+        comment_widget = (
+            f'<div class="comment-widget" data-section-id="{sid}">'
+            f'<button type="button" class="comment-toggle" aria-expanded="false">💬 Comment</button>'
+            f'<div class="comment-body" hidden>'
+            f'<textarea class="comment-textarea" data-section-id="{sid}" '
+            f'placeholder="Type your question or comment for this file…"></textarea>'
+            f'<div class="comment-meta"><span class="comment-saved-indicator" aria-live="polite"></span></div>'
+            f'</div>'
+            f'</div>'
+        )
+
     return (
-        f'<details class="file-detail" id="{fc.anchor}" open>'
+        f'<details class="file-detail" id="{fc.anchor}"'
+        f' data-section-id="{fc.anchor}" data-section-label="{_esc(fc.path)}" open>'
         f'  <summary class="file-summary-head">'
         f'    <span class="badge {badge_cls}">{_esc(label)}</span>'
         f'    <span class="file-path">{rename_html}<code>{header_path}</code></span>'
         f'    {stats_html}'
         f'  </summary>'
         f'  <div class="file-body">{body}</div>'
+        f'  {comment_widget}'
         f'</details>'
     )
 
@@ -534,15 +552,31 @@ def render_commits(commits: list[Commit]) -> str:
         f'</tr>'
         for c in commits
     )
+    commit_comment_widget = ""
+    if _COMMENTS_ENABLED:
+        commit_comment_widget = (
+            '<div class="comment-widget" data-section-id="commits">'
+            '<button type="button" class="comment-toggle" aria-expanded="false">💬 Comment</button>'
+            '<div class="comment-body" hidden>'
+            '<textarea class="comment-textarea" data-section-id="commits" '
+            'placeholder="Type your question or comment for commits…"></textarea>'
+            '<div class="comment-meta"><span class="comment-saved-indicator" aria-live="polite"></span></div>'
+            '</div>'
+            '</div>'
+        )
     return (
-        '<section class="section">'
+        '<section class="section" data-section-id="commits" data-section-label="Commits">'
         '  <h2 class="section-title"><span class="marker sym-diamond">◇</span>Commits</h2>'
         f'  <table class="commits-table">{rows}</table>'
+        f'  {commit_comment_widget}'
         '</section>'
     )
 
 
-def render_html(review: Review) -> str:
+def render_html(review: Review, comments_enabled: bool = False) -> str:
+    global _COMMENTS_ENABLED
+    _COMMENTS_ENABLED = comments_enabled
+
     detail_blocks = "\n".join(render_file_detail(f) for f in review.files)
     if not review.files:
         detail_blocks = '<div class="empty-row">No changes to display.</div>'
@@ -551,6 +585,350 @@ def render_html(review: Review) -> str:
         f"{review.total_files} FILE" + ("" if review.total_files == 1 else "S")
         + f" · +{review.total_added} / −{review.total_deleted} LINES"
     )
+
+    report_id = slugify(review.title)
+
+    # Build comment-related blocks as plain Python strings so CSS/JS braces
+    # don't need to be doubled when interpolated into TEMPLATE.format().
+    comment_css = ""
+    floating_button_html = ""
+    comment_script = ""
+    if _COMMENTS_ENABLED:
+        comment_css = """
+  /* Comment widget */
+  .comment-widget {
+    margin-top: 12px;
+    border-top: 1px dashed var(--border);
+    padding: 12px 16px 12px;
+  }
+  .comment-toggle {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    font-family: var(--sans);
+    transition: border-color 120ms, color 120ms, background 120ms;
+  }
+  .comment-toggle:hover { color: var(--text); border-color: var(--renamed); }
+  .comment-toggle.has-comment { color: var(--renamed); border-color: var(--renamed); }
+  .comment-body { margin-top: 10px; }
+  .comment-textarea {
+    width: 100%;
+    min-height: 80px;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  .comment-textarea:focus { outline: none; border-color: var(--renamed); }
+  .comment-meta {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+    min-height: 16px;
+  }
+  .comment-saved-indicator {
+    color: var(--dim);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  #export-bar {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 100;
+  }
+  #export-btn {
+    background: var(--renamed);
+    color: #0a0d12;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    transition: transform 120ms, box-shadow 120ms;
+  }
+  #export-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(0,0,0,0.5); }
+  #export-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  .export-count {
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    color: var(--muted);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+  }
+  .export-modal:not([hidden]) { display: flex; }
+  .export-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+  }
+  .export-modal-inner {
+    width: min(720px, 90vw);
+    max-height: 80vh;
+    background: var(--panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .export-modal-head { display: flex; justify-content: space-between; align-items: center; }
+  .export-modal-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .export-modal-close {
+    background: transparent; color: var(--muted); border: none;
+    font-size: 20px; cursor: pointer; line-height: 1;
+  }
+  .export-modal-close:hover { color: var(--text); }
+  #export-modal-text {
+    width: 100%; flex: 1; min-height: 280px; box-sizing: border-box;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 12px; font-family: var(--mono); font-size: 12px;
+    line-height: 1.55; resize: vertical;
+  }
+  .export-modal-actions {
+    display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
+  }
+  .export-action-btn {
+    background: var(--panel-alt); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 4px;
+    padding: 6px 12px; font-size: 12.5px; cursor: pointer;
+    transition: border-color 120ms, color 120ms;
+  }
+  .export-action-btn:hover { border-color: var(--renamed); color: var(--renamed); }
+  .export-clear:hover { border-color: var(--removed); color: var(--removed); }"""
+
+        floating_button_html = (
+            '<div id="export-bar">'
+            '<button type="button" id="export-btn">📋 Export comments</button>'
+            '<span id="export-count" class="export-count">0 comments</span>'
+            '</div>'
+            '<div id="export-modal" class="export-modal" hidden>'
+            '<div class="export-modal-inner">'
+            '<div class="export-modal-head">'
+            '<span class="export-modal-title">Comments &amp; questions</span>'
+            '<button type="button" class="export-modal-close" id="export-modal-close">×</button>'
+            '</div>'
+            '<textarea id="export-modal-text" readonly></textarea>'
+            '<div class="export-modal-actions">'
+            '<button type="button" id="export-copy-btn" class="export-action-btn">📋 Copy to clipboard</button>'
+            '<button type="button" id="export-download-btn" class="export-action-btn">💾 Download .md</button>'
+            '<button type="button" id="export-clear-btn" class="export-action-btn export-clear">🗑 Clear all</button>'
+            '</div>'
+            '</div>'
+            '</div>'
+        )
+
+        comment_script = """
+  <script>
+    (function() {
+      var enabled = document.body.getAttribute('data-comments-enabled') === 'true';
+      if (!enabled) return;
+      var reportId = document.body.getAttribute('data-report-id') || 'review';
+      var storageKey = 'gitviz:' + reportId;
+
+      function loadComments() {
+        try { return JSON.parse(localStorage.getItem(storageKey) || '{}'); }
+        catch (e) { return {}; }
+      }
+      function saveComments(map) {
+        try { localStorage.setItem(storageKey, JSON.stringify(map)); }
+        catch (e) {}
+      }
+      function updateExportCount() {
+        var map = loadComments();
+        var n = Object.keys(map).filter(function(k) { return (map[k] || '').trim().length > 0; }).length;
+        var el = document.getElementById('export-count');
+        var btn = document.getElementById('export-btn');
+        if (el) el.textContent = n + (n === 1 ? ' comment' : ' comments');
+        if (btn) btn.disabled = (n === 0);
+      }
+
+      var data = loadComments();
+      var widgets = document.querySelectorAll('.comment-widget');
+      widgets.forEach(function(w) {
+        var sid = w.getAttribute('data-section-id');
+        var btn = w.querySelector('.comment-toggle');
+        var body = w.querySelector('.comment-body');
+        var ta = w.querySelector('.comment-textarea');
+        var indicator = w.querySelector('.comment-saved-indicator');
+
+        if (data[sid]) {
+          ta.value = data[sid];
+          btn.classList.add('has-comment');
+          btn.textContent = '💬 Comment (saved)';
+        }
+        body.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          var isHidden = body.hidden;
+          if (isHidden) {
+            body.hidden = false;
+            btn.setAttribute('aria-expanded', 'true');
+            ta.focus();
+          } else {
+            body.hidden = true;
+            btn.setAttribute('aria-expanded', 'false');
+          }
+        });
+
+        var saveTimer = null;
+        ta.addEventListener('input', function() {
+          if (saveTimer) clearTimeout(saveTimer);
+          if (indicator) indicator.textContent = 'saving…';
+          saveTimer = setTimeout(function() {
+            var map = loadComments();
+            var v = ta.value.trim();
+            if (v) {
+              map[sid] = ta.value;
+              btn.classList.add('has-comment');
+              btn.textContent = '💬 Comment (saved)';
+            } else {
+              delete map[sid];
+              btn.classList.remove('has-comment');
+              btn.textContent = '💬 Comment';
+            }
+            saveComments(map);
+            if (indicator) {
+              indicator.textContent = 'saved';
+              setTimeout(function() { if (indicator.textContent === 'saved') indicator.textContent = ''; }, 1200);
+            }
+            updateExportCount();
+          }, 350);
+        });
+      });
+
+      updateExportCount();
+
+      var exportBtn = document.getElementById('export-btn');
+      var modal = document.getElementById('export-modal');
+      var modalText = document.getElementById('export-modal-text');
+      var closeBtn = document.getElementById('export-modal-close');
+      var copyBtn = document.getElementById('export-copy-btn');
+      var dlBtn = document.getElementById('export-download-btn');
+      var clearBtn = document.getElementById('export-clear-btn');
+
+      function buildExport() {
+        var map = loadComments();
+        var lines = [];
+        var title = document.querySelector('h1') ? document.querySelector('h1').textContent.trim() : 'Review';
+        var dateStr = new Date().toISOString().slice(0, 10);
+        lines.push('# Comments — ' + title);
+        lines.push('');
+        lines.push('_Generated_: ' + dateStr);
+        lines.push('_Report_: `' + reportId + '`');
+        lines.push('');
+
+        var seen = {};
+        var sections = document.querySelectorAll('[data-section-id]');
+        var any = false;
+        sections.forEach(function(sec) {
+          var sid = sec.getAttribute('data-section-id');
+          if (!sid || seen[sid]) return;
+          seen[sid] = true;
+          var c = (map[sid] || '').trim();
+          if (!c) return;
+
+          var heading = sec.getAttribute('data-section-label') || '';
+          if (!heading) {
+            var hEl = sec.querySelector('.section-title, h1, h2, h3');
+            if (hEl) heading = hEl.textContent.replace(/¶$/, '').trim();
+          }
+          if (!heading) heading = sid;
+
+          any = true;
+          lines.push('## ' + heading);
+          lines.push('');
+          lines.push(c);
+          lines.push('');
+        });
+
+        if (!any) { lines.push('_(no comments yet)_'); }
+        return lines.join('\\n');
+      }
+
+      if (exportBtn) {
+        exportBtn.addEventListener('click', function() {
+          modalText.value = buildExport();
+          modal.hidden = false;
+          modalText.focus();
+          modalText.select();
+        });
+      }
+      if (closeBtn) closeBtn.addEventListener('click', function() { modal.hidden = true; });
+      if (modal) modal.addEventListener('click', function(e) { if (e.target === modal) modal.hidden = true; });
+
+      if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+          var txt = modalText.value;
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(txt).then(function() {
+              copyBtn.textContent = '✓ Copied';
+              setTimeout(function() { copyBtn.textContent = '📋 Copy to clipboard'; }, 1400);
+            });
+          } else {
+            modalText.select(); document.execCommand('copy');
+            copyBtn.textContent = '✓ Copied';
+            setTimeout(function() { copyBtn.textContent = '📋 Copy to clipboard'; }, 1400);
+          }
+        });
+      }
+
+      if (dlBtn) {
+        dlBtn.addEventListener('click', function() {
+          var blob = new Blob([modalText.value], { type: 'text/markdown' });
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = reportId + '-comments.md';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      }
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          if (!confirm('Clear all comments? This cannot be undone.')) return;
+          localStorage.removeItem(storageKey);
+          document.querySelectorAll('.comment-textarea').forEach(function(ta) { ta.value = ''; });
+          document.querySelectorAll('.comment-toggle').forEach(function(b) {
+            b.classList.remove('has-comment');
+            b.textContent = '💬 Comment';
+          });
+          document.querySelectorAll('.comment-body').forEach(function(b) { b.hidden = true; });
+          document.querySelectorAll('.comment-toggle').forEach(function(b) { b.setAttribute('aria-expanded', 'false'); });
+          modal.hidden = true;
+          updateExportCount();
+        });
+      }
+    })();
+  </script>"""
 
     return TEMPLATE.format(
         title=_esc(review.title),
@@ -561,6 +939,11 @@ def render_html(review: Review) -> str:
         sidebar=render_sidebar(review),
         detail_blocks=detail_blocks,
         commits_section=render_commits(review.commits),
+        comments_enabled_js="true" if _COMMENTS_ENABLED else "false",
+        report_id=report_id,
+        comment_css=comment_css,
+        floating_button=floating_button_html,
+        comment_script=comment_script,
     )
 
 
@@ -849,9 +1232,10 @@ TEMPLATE = """<!DOCTYPE html>
     .top-right {{ align-items: flex-start; text-align: left; min-width: 0; }}
     .diff-table col.col-gutter {{ width: 36px; }}
   }}
+{comment_css}
 </style>
 </head>
-<body>
+<body data-comments-enabled="{comments_enabled_js}" data-report-id="{report_id}">
   <div class="page">
     <header class="top">
       <div class="top-left">
@@ -886,6 +1270,10 @@ TEMPLATE = """<!DOCTYPE html>
       </main>
     </div>
   </div>
+
+  {floating_button}
+
+{comment_script}
 </body>
 </html>
 """
@@ -907,6 +1295,7 @@ def main() -> int:
     parser.add_argument("-U", "--context", type=int, default=3, help="Unified-diff context lines (default: 3).")
     parser.add_argument("-o", "--output", help="Output HTML path (default: slug-named file in OS temp dir).")
     parser.add_argument("--no-open", action="store_true", help="Write the file but do not open the browser.")
+    parser.add_argument("--comments", action="store_true", help="Enable per-file comment widgets with export.")
     args = parser.parse_args()
 
     try:
@@ -915,7 +1304,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    html_content = render_html(review)
+    html_content = render_html(review, comments_enabled=args.comments)
 
     if args.output:
         output_path = Path(args.output).expanduser().resolve()

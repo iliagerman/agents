@@ -42,6 +42,22 @@ The user's request usually maps to exactly one of these modes:
 
 When in doubt, ask the user once rather than guessing. The answer is always one of those five modes.
 
+## Comments — per-file review notes
+
+Pass `--comments` to enable a collapsible comment textarea on every changed file and on the commits section. Comments persist in `localStorage`, survive page reloads, and can be exported as Markdown via the floating `📋 Export comments` button.
+
+```bash
+python3 "<skill-dir>/scripts/visualize_changes.py" --comments
+python3 "<skill-dir>/scripts/visualize_changes.py" --comments --base main
+python3 "<skill-dir>/scripts/visualize_changes.py" --comments --commit HEAD
+```
+
+The export produces a Markdown document with `## <file path>` headings so it's clear which comment belongs to which file. For the full behavioral spec (collapse-by-default, autosave debounce, export format, `data-section-label` semantics), read:
+
+```
+read: ../common/comments-widget.md
+```
+
 ## Running the script
 
 The bundled script lives at `scripts/visualize_changes.py` inside this skill directory. Run it from the repo root (or pass `--repo <path>`):
@@ -60,6 +76,7 @@ Other useful flags:
 - `-U <N>` / `--context <N>` — unified-diff context lines (default 3).
 - `-o <path>` / `--output <path>` — explicit output HTML path.
 - `--no-open` — write the HTML but do not open a browser. Use in headless / CI.
+- `--comments` — enable per-file comment widgets with export.
 
 The script prints the final `file://...` URL to stdout. Always surface that URL back to the user so they have a persistent link they can re-open or share.
 

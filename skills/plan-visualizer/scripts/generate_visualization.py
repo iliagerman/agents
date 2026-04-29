@@ -360,13 +360,15 @@ def render_sections(sections: list[dict]) -> str:
     parts = []
     for s in sections:
         sid = s.get("id") or ""
-        title = render_inline(s.get("title", ""))
+        raw_title = s.get("title", "")
+        title = render_inline(raw_title)
         body = render_section_body(s)
         parts.append(
             wrap_section_with_comment(
                 section_id=sid,
                 title=title,
                 body=body,
+                label=raw_title,
             )
         )
     return "\n".join(parts)
@@ -379,10 +381,14 @@ def render_sections(sections: list[dict]) -> str:
 _COMMENTS_ENABLED = False
 
 
-def wrap_section_with_comment(section_id: str, title: str, body: str) -> str:
+def wrap_section_with_comment(section_id: str, title: str, body: str, label: str = "") -> str:
     """Wrap a section's content in <section>, with an optional comment widget."""
     sid = re.sub(r"[^a-zA-Z0-9_-]+", "-", section_id).strip("-") or "section"
     title_html = title  # caller has already rendered HTML for marker + text
+    clean_label = label
+    if not clean_label:
+        clean_label = re.sub(r"<[^>]+>", "", title).strip()
+        clean_label = clean_label.lstrip("→◇◈⇋⊘⚠✕⊞ ").strip()
     comment_html = ""
     if _COMMENTS_ENABLED:
         comment_html = (
@@ -396,7 +402,8 @@ def wrap_section_with_comment(section_id: str, title: str, body: str) -> str:
             f'</div>'
         )
     return (
-        f'<section class="section" id="sec-{sid}" data-section-id="{sid}">'
+        f'<section class="section" id="sec-{sid}" data-section-id="{sid}"'
+        f' data-section-label="{html.escape(clean_label)}">'
         f'<h2 class="section-title">{title_html}'
         f'<a class="section-anchor" href="#sec-{sid}" title="permalink">¶</a>'
         f'</h2>'
@@ -438,14 +445,14 @@ def render_html(plan: dict) -> str:
         after_html = render_column(after_items)
         columns_html = (
             '<div class="columns">'
-            f'<section class="column" id="sec-before" data-section-id="before">'
+            f'<section class="column" id="sec-before" data-section-id="before" data-section-label="Before">'
             f'<div class="column-head">Before</div>{before_html}'
         )
         if _COMMENTS_ENABLED:
             columns_html += render_inline_comment_widget("before")
         columns_html += (
             f'</section>'
-            f'<section class="column" id="sec-after" data-section-id="after">'
+            f'<section class="column" id="sec-after" data-section-id="after" data-section-label="After">'
             f'<div class="column-head">After</div>{after_html}'
         )
         if _COMMENTS_ENABLED:
@@ -1303,10 +1310,12 @@ TEMPLATE = """<!DOCTYPE html>
           var c = (map[sid] || '').trim();
           if (!c) return;
 
-          // Find an appropriate heading: prefer h1/h2/h3 inside, fall back to data-section-id
-          var heading = '';
-          var hEl = sec.querySelector('.section-title, h1, h2, h3, .column-head');
-          if (hEl) heading = hEl.textContent.replace(/¶$/, '').trim();
+          // Prefer the clean data-section-label attribute, fall back to DOM text
+          var heading = sec.getAttribute('data-section-label') || '';
+          if (!heading) {{
+            var hEl = sec.querySelector('.section-title, h1, h2, h3, .column-head');
+            if (hEl) heading = hEl.textContent.replace(/¶$/, '').trim();
+          }}
           if (!heading) heading = sid;
 
           any = true;

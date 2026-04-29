@@ -55,39 +55,18 @@ You can combine them — a JSON with both `before`/`after` AND `sections` will r
 
 If you set `comments_enabled: true`, every rendered section gets a small "💬 Comment" toggle button.
 
-### Comment widget behavior — must match this exactly
+For the full behavioral spec (collapse-by-default, autosave debounce, export format, `data-section-label` semantics), read:
 
-- **Always collapsed by default.** When the page loads, every comment textarea is hidden, regardless of whether the user already wrote a comment in a previous session.
-- **Click the button to open** the textarea (auto-focuses it for typing).
-- **Click the button again to close** the textarea (the value stays — it's just hidden).
-- **The button label changes to "💬 Comment (saved)"** when there's a non-empty comment, and gets a `.has-comment` CSS class for the colored border. It reverts to plain "💬 Comment" if the user clears the text.
-- **Comments persist in `localStorage`** keyed by `report_id`. They survive page reloads but the widget always starts collapsed.
-- The textarea autosaves with a 350ms debounce. A "saved" indicator briefly appears.
-
-This collapse-by-default behavior is intentional — it keeps the page scannable and prevents the report from looking cluttered when the user already left comments. Do not change it without an explicit ask from the user.
-
-### Export bar
-
-A floating "📋 Export comments" button at the bottom-right collects every non-empty comment into a Markdown document. Three actions:
-
-- **Copy to clipboard** — copies the export text. Use this when pasting back into a chat.
-- **Download .md** — saves the export as `<report_id>-comments.md`.
-- **Clear all** — wipes localStorage for this report and re-collapses every widget.
-
-The export walks sections in DOM order, picks each section's heading, and produces:
-
-```markdown
-# Comments — <report title>
-
-_Generated_: 2026-04-28
-_Report_: `<report_id>`
-
-## Section heading
-<user's comment text>
-
-## Another section
-<another comment>
 ```
+read: ../common/comments-widget.md
+```
+
+### Quick summary
+
+- **Always collapsed by default.** Textareas are hidden on load even when a saved comment exists. The button gets `.has-comment` styling as a visual indicator.
+- **Click to open / click again to close.** Opening auto-focuses the textarea.
+- **Autosaves with 350 ms debounce** to `localStorage` keyed by `report_id`. The button label changes to `"💬 Comment (saved)"` when a comment is saved.
+- A floating **`📋 Export comments`** button (bottom-right) collects all non-empty comments into Markdown with `## <section heading>` labels. Each heading comes from the `data-section-label` attribute — clean plain text, no marker symbols.
 
 Default is `comments_enabled: false` (silent — no comment widgets, no export bar).
 
