@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import re
 import subprocess
 import sys
@@ -65,6 +66,7 @@ class DiffLine:
 class Hunk:
     header: str
     lines: list[DiffLine] = field(default_factory=list)
+    explanation: str | None = None  # agent-authored "why this changed" note
 
 
 @dataclass
@@ -76,6 +78,7 @@ class FileChange:
     deleted: int = 0
     binary: bool = False
     hunks: list[Hunk] = field(default_factory=list)
+    explanation: str | None = None  # agent-authored "why this file changed" note
 
     @property
     def anchor(self) -> str:
@@ -271,6 +274,91 @@ def parse_diff_into_files(diff_text: str, files: list[FileChange]) -> None:
     attach_hunk()
 
 
+def load_annotations(path: str | None, files: list[FileChange]) -> None:
+    """Attach agent-authored explanations from a JSON file to files and hunks.
+
+    Schema:
+        {
+          "files": {
+            "<path/in/repo>": {
+              "summary": "<why this file changed>",
+              "hunks": [
+                "<explanation>",
+                {"header": "@@ -a,b +c,d @@", "explanation": "<...>"}
+              ]
+            }
+          }
+        }
+
+    `hunks` is a positional list. Each entry may be a string (the explanation
+    itself) or an object with `explanation` plus an optional `header` for
+    self-verification — when `header` is present and does not match the actual
+    hunk's header, a warning is printed but the explanation is still applied
+    by index. Empty strings and `null` entries skip the hunk.
+    """
+    if not path:
+        return
+    annotations_path = Path(path).expanduser().resolve()
+    if not annotations_path.is_file():
+        raise RuntimeError(f"Annotations file not found: {annotations_path}")
+    try:
+        data = json.loads(annotations_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Invalid JSON in annotations: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("Annotations JSON must be an object at the top level")
+
+    file_anns = data.get("files") or {}
+    if not isinstance(file_anns, dict):
+        raise RuntimeError("'files' in annotations JSON must be an object keyed by path")
+
+    by_path: dict[str, FileChange] = {f.path: f for f in files}
+    for f in files:
+        if f.old_path:
+            by_path[f.old_path] = f
+
+    for path_key, payload in file_anns.items():
+        fc = by_path.get(path_key)
+        if not fc:
+            print(
+                f"warning: annotations reference unknown file {path_key!r}",
+                file=sys.stderr,
+            )
+            continue
+        if not isinstance(payload, dict):
+            continue
+        summary = payload.get("summary") or payload.get("explanation")
+        if isinstance(summary, str) and summary.strip():
+            fc.explanation = summary
+
+        hunks_payload = payload.get("hunks")
+        if not isinstance(hunks_payload, list):
+            continue
+        for idx, item in enumerate(hunks_payload):
+            if idx >= len(fc.hunks):
+                break
+            text: str | None = None
+            expected_header: str | None = None
+            if isinstance(item, str):
+                text = item
+            elif isinstance(item, dict):
+                raw_text = item.get("explanation")
+                if isinstance(raw_text, str):
+                    text = raw_text
+                raw_header = item.get("header")
+                if isinstance(raw_header, str):
+                    expected_header = raw_header
+            if not text or not text.strip():
+                continue
+            if expected_header and expected_header.strip() != fc.hunks[idx].header.strip():
+                print(
+                    f"warning: hunk header mismatch in {path_key} index {idx}: "
+                    f"expected {expected_header!r}, got {fc.hunks[idx].header!r}",
+                    file=sys.stderr,
+                )
+            fc.hunks[idx].explanation = text
+
+
 def collect_commits(log_args: list[str], repo: str) -> list[Commit]:
     if not log_args:
         return []
@@ -301,6 +389,8 @@ def build_review(cli: argparse.Namespace) -> Review:
     files = parse_name_status(name_status)
     merge_numstat(files, numstat)
     parse_diff_into_files(diff_text, files)
+
+    load_annotations(getattr(cli, "annotations", None), files)
 
     total_added = sum(f.added for f in files)
     total_deleted = sum(f.deleted for f in files)
@@ -342,6 +432,34 @@ def render_inline(text: str) -> str:
     """Escape text and allow `backtick` spans as inline monospace."""
     escaped = html.escape(text)
     return re.sub(r"`([^`]+)`", r'<code class="inline">\1</code>', escaped)
+
+
+def render_annotation_body(text: str) -> str:
+    """Escape annotation prose, preserve paragraphs and line breaks, render `code`."""
+    paragraphs = re.split(r"\n\s*\n", text.strip())
+    rendered: list[str] = []
+    for para in paragraphs:
+        if not para.strip():
+            continue
+        escaped = html.escape(para)
+        with_code = re.sub(r"`([^`]+)`", r'<code class="inline">\1</code>', escaped)
+        with_breaks = with_code.replace("\n", "<br>")
+        rendered.append(f"<p>{with_breaks}</p>")
+    return "".join(rendered)
+
+
+def render_annotation(text: str, kind: str) -> str:
+    """Render an agent-authored explanation block (file-level or hunk-level)."""
+    label = "Why this file changed" if kind == "file" else "Why"
+    return (
+        f'<div class="annotation annotation-{kind}">'
+        f'  <span class="annotation-icon" aria-hidden="true">💡</span>'
+        f'  <div class="annotation-content">'
+        f'    <span class="annotation-label">{label}</span>'
+        f'    <div class="annotation-body">{render_annotation_body(text)}</div>'
+        f'  </div>'
+        f'</div>'
+    )
 
 
 def pair_lines(lines: list[DiffLine]) -> list[tuple[DiffLine | None, DiffLine | None]]:
@@ -422,7 +540,11 @@ def render_side_by_side_row(
 
 def render_hunk_side_by_side(hunk: Hunk) -> str:
     rows = [render_side_by_side_row(left, right) for left, right in pair_lines(hunk.lines)]
+    annotation_html = (
+        render_annotation(hunk.explanation, kind="hunk") if hunk.explanation else ""
+    )
     return (
+        f'{annotation_html}'
         f'<div class="hunk-header"><code>{_esc(hunk.header)}</code></div>'
         '<table class="diff-table side-by-side">'
         '  <colgroup>'
@@ -501,6 +623,10 @@ def render_file_detail(fc: FileChange) -> str:
     else:
         body = "".join(render_hunk_side_by_side(h) for h in fc.hunks)
 
+    file_annotation_html = (
+        render_annotation(fc.explanation, kind="file") if fc.explanation else ""
+    )
+
     stats_html = (
         '<span class="stat-nums binary">binary</span>'
         if fc.binary
@@ -534,6 +660,7 @@ def render_file_detail(fc: FileChange) -> str:
         f'    <span class="file-path">{rename_html}<code>{header_path}</code></span>'
         f'    {stats_html}'
         f'  </summary>'
+        f'  {file_annotation_html}'
         f'  <div class="file-body">{body}</div>'
         f'  {comment_widget}'
         f'</details>'
@@ -587,6 +714,50 @@ def render_html(review: Review, comments_enabled: bool = False) -> str:
     )
 
     report_id = slugify(review.title)
+
+    annotation_css = """
+  /* Annotation blocks — agent-authored explanations for files and hunks. */
+  .annotation {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(245, 176, 65, 0.06);
+    border-left: 3px solid var(--changed);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+  }
+  .annotation-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--changed);
+    line-height: 1.4;
+  }
+  .annotation-content { flex: 1; min-width: 0; }
+  .annotation-label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--changed);
+    margin-bottom: 4px;
+  }
+  .annotation-body p { margin: 0 0 8px; }
+  .annotation-body p:last-child { margin-bottom: 0; }
+  .annotation-body code.inline {
+    background: rgba(245, 176, 65, 0.12);
+    border-color: rgba(245, 176, 65, 0.3);
+    color: #f5d28a;
+  }
+  .annotation-file { border-bottom: 1px solid var(--border); }
+  .annotation-hunk {
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    font-size: 12.5px;
+  }
+  .annotation-hunk + .hunk-header { border-top: none; }
+"""
 
     # Build comment-related blocks as plain Python strings so CSS/JS braces
     # don't need to be doubled when interpolated into TEMPLATE.format().
@@ -941,6 +1112,7 @@ def render_html(review: Review, comments_enabled: bool = False) -> str:
         commits_section=render_commits(review.commits),
         comments_enabled_js="true" if _COMMENTS_ENABLED else "false",
         report_id=report_id,
+        annotation_css=annotation_css,
         comment_css=comment_css,
         floating_button=floating_button_html,
         comment_script=comment_script,
@@ -1232,6 +1404,7 @@ TEMPLATE = """<!DOCTYPE html>
     .top-right {{ align-items: flex-start; text-align: left; min-width: 0; }}
     .diff-table col.col-gutter {{ width: 36px; }}
   }}
+{annotation_css}
 {comment_css}
 </style>
 </head>
@@ -1296,6 +1469,15 @@ def main() -> int:
     parser.add_argument("-o", "--output", help="Output HTML path (default: slug-named file in OS temp dir).")
     parser.add_argument("--no-open", action="store_true", help="Write the file but do not open the browser.")
     parser.add_argument("--comments", action="store_true", help="Enable per-file comment widgets with export.")
+    parser.add_argument(
+        "--annotations",
+        metavar="PATH",
+        help=(
+            "Path to a JSON file with agent-authored explanations. "
+            "Schema: {\"files\": {\"<path>\": {\"summary\": \"...\", \"hunks\": [\"...\"]}}}. "
+            "Renders 'Why this changed' callouts above each file and hunk in the report."
+        ),
+    )
     args = parser.parse_args()
 
     try:

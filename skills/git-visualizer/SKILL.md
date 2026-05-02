@@ -42,6 +42,88 @@ The user's request usually maps to exactly one of these modes:
 
 When in doubt, ask the user once rather than guessing. The answer is always one of those five modes.
 
+## Annotations — agent-authored explanations on the report
+
+When the user asks for "explanations next to each change", "comments on why this changed", "annotated diff", "review with reasoning", or similar, attach explanations to each file and hunk. **The explanations live only in the rendered HTML report — never write them into the source code as comments.**
+
+### Workflow (do this in order)
+
+1. **Read the diff first.** Run the same `git diff` the visualizer will run (e.g. `git diff HEAD` for working tree, `git show HEAD` for last commit, `git diff main...HEAD` for branch-vs-base) and read every hunk in order. Do not guess — explanations must reflect what the diff actually shows.
+2. **Write `annotations.json`** with one entry per changed file. For each file, provide a short `summary` (why this file changed overall) and a positional `hunks` list — one entry per hunk in the order they appear in the diff. Use empty string `""` to skip a hunk you don't want to annotate.
+3. **Invoke the visualizer with `--annotations <path>`**, combined with whichever diff-mode flag you'd normally use:
+
+```bash
+python3 "<skill-dir>/scripts/visualize_changes.py" --annotations annotations.json
+python3 "<skill-dir>/scripts/visualize_changes.py" --annotations annotations.json --base main
+python3 "<skill-dir>/scripts/visualize_changes.py" --annotations annotations.json --commit HEAD
+```
+
+### JSON schema
+
+```json
+{
+  "files": {
+    "<path/in/repo>": {
+      "summary": "Why this file changed (purpose, reason).",
+      "hunks": [
+        "Why the first hunk changed.",
+        "",
+        {"header": "@@ -42,6 +42,22 @@ optional self-check", "explanation": "Why the third hunk changed."}
+      ]
+    }
+  }
+}
+```
+
+- `files` is keyed by the file's path as it appears in the diff (post-rename path for renames).
+- `summary` is optional — omit it if you only want hunk-level notes.
+- `hunks` is positional. Entry `i` annotates the i-th hunk shown in that file's diff. Out-of-range entries are silently dropped; empty strings and `null` skip a hunk.
+- Each hunk entry is either a plain string (the explanation) or an object `{"header": "...", "explanation": "..."}`. The optional `header` is a self-check: if it's present and doesn't match the actual hunk's `@@` line, the script logs a warning but still applies the explanation by index.
+
+### Worked example
+
+User says: *"show me my staged changes with an explanation of each change"*. Suppose `git diff --cached` shows two files:
+
+```
+diff --git a/src/auth.py b/src/auth.py
+@@ -10,4 +10,8 @@ def login(...):
+@@ -45,2 +49,3 @@ def logout(...):
+diff --git a/src/users.py b/src/users.py
+@@ -1,1 +1,2 @@
+```
+
+Write `annotations.json`:
+
+```json
+{
+  "files": {
+    "src/auth.py": {
+      "summary": "Switched session-based auth to short-lived JWTs to satisfy the new compliance requirement on token storage.",
+      "hunks": [
+        "Replaced the session-cookie issuance with `create_jwt(user_id, ttl=15m)` so tokens never persist server-side.",
+        "Added an explicit `revoke_jwt()` call on logout — sessions used to be invalidated implicitly via cookie expiry."
+      ]
+    },
+    "src/users.py": {
+      "summary": "One-line import update — needed because `auth.py` now exports `create_jwt` instead of `start_session`.",
+      "hunks": ["Renamed the import."]
+    }
+  }
+}
+```
+
+Then run:
+
+```bash
+python3 "<skill-dir>/scripts/visualize_changes.py" --staged --annotations annotations.json
+```
+
+The rendered HTML shows a "Why this file changed" callout under each file's header and a "Why" callout above each annotated hunk's diff table. The source files are untouched.
+
+### Combining with `--comments`
+
+`--annotations` (agent-authored, baked into the page) and `--comments` (human reviewer notes, saved to `localStorage` and exportable) are independent and stack. Pass both to give the reviewer your reasoning AND a place to leave their reply.
+
 ## Comments — per-file review notes
 
 Pass `--comments` to enable a collapsible comment textarea on every changed file and on the commits section. Comments persist in `localStorage`, survive page reloads, and can be exported as Markdown via the floating `📋 Export comments` button.
@@ -77,6 +159,7 @@ Other useful flags:
 - `-o <path>` / `--output <path>` — explicit output HTML path.
 - `--no-open` — write the HTML but do not open a browser. Use in headless / CI.
 - `--comments` — enable per-file comment widgets with export.
+- `--annotations <path>` — attach agent-authored "Why this changed" explanations to each file and hunk in the report (see *Annotations* above for the JSON schema).
 
 The script prints the final `file://...` URL to stdout. Always surface that URL back to the user so they have a persistent link they can re-open or share.
 
@@ -147,3 +230,4 @@ python3 "<skill-dir>/scripts/visualize_changes.py" --base origin/develop
 - **Don't run on a repo you don't know.** Always check `git status` / `git rev-parse --show-toplevel` first if there's any ambiguity about which repo you're in.
 - **Don't regenerate a review file over and over with different names.** By default, output goes to the OS temp dir with a slug based on the review title; that's fine for normal use. If the user wants a persistent artifact (to attach to a PR, share with a reviewer), pass `-o <path>` to an explicit location they control.
 - **Don't block on large diffs.** If the review includes hundreds of files or tens of thousands of lines, just run it — the HTML handles it. Do not pre-filter or sample.
+- **Don't write annotations into the source files.** When the user asks for explanations alongside the diff, put them in `annotations.json` and pass `--annotations`. They render in the report only and never touch the code. Adding explanatory `# ...` / `// ...` comments to the actual files is a separate action that this skill never performs.
