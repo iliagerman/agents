@@ -3,8 +3,9 @@ name: project-init
 description: >-
   Scaffold a new full-stack project with FastAPI backend, React + shadcn frontend,
   SQLAlchemy + Postgres database, documentation structure, justfile commands,
-  and git hooks for smoke tests and automated code review/doc updates on push.
-  Use when starting a new project from scratch.
+  and git hooks for smoke tests, visual git reports, Claude test-coverage
+  verification, and automated Claude review/doc updates on push. Use when
+  starting a new project from scratch.
 ---
 
 # Project Init
@@ -387,7 +388,8 @@ Create the project root and full directory tree:
    - `src/styles/` — Design tokens and globals
 
    ### Documentation (docs/)
-   - Updated before every push via git hook
+   - Updated when the pre-push Claude hook determines changes require doc refresh
+   - Pushes stop when docs were changed so the user can review and commit them
    - Contains architecture, API, deployment, and development docs
 
    ## Logging
@@ -415,23 +417,24 @@ Create the project root and full directory tree:
    - `just test-backend-grep <pattern>` — Run backend tests matching a pattern
    - `just test-frontend` — Run all frontend tests
    - `just lint` — Run linters for both backend and frontend
+   - `just setup-hooks` — Configure `.githooks/pre-push`
    - `just db-migrate <message>` — Create a new Alembic migration
    - `just db-upgrade` — Apply database migrations
 
    ## ⚠️ Git Hooks — Verify on Every Session
 
-   This project uses git hooks in `.githooks/` for smoke tests and automated code review on push.
+   This project uses git hooks in `.githooks/` for smoke tests, visual git report generation, Claude test-coverage verification, and automated Claude review/doc updates on push.
 
    **At the start of every conversation**, verify that git hooks are properly configured:
 
    1. Run: `git config core.hooksPath`
    2. If the output is `.githooks` — hooks are enabled, proceed normally.
    3. If the output is empty or anything else — hooks are NOT enabled. **Immediately alert the user**:
-      - Tell them: "Git hooks are not configured. The pre-push hook (smoke tests + code review) will not run."
+      - Tell them: "Git hooks are not configured. The pre-push hook (smoke tests + visual git report + test coverage verification + Claude review/doc update) will not run."
       - Ask them to run: `just setup-hooks`
       - Do NOT proceed with any work until the user confirms hooks are enabled.
 
-   Hooks are critical — they run smoke tests and Claude code review before every push. Without them, broken code can be pushed.
+   Hooks are critical — they run smoke tests, create `.git/git-reports/pre-push-latest.html`, verify upcoming changes have enough test coverage, and stop the push when Claude finds blockers, missing tests, or documentation changes that still need user review.
 
    ## Data Flow
 
@@ -475,7 +478,7 @@ _find-port PREFERRED:
     done
     echo "$port"
 
-# Initialize the project: install all dependencies and set up the database
+# Initialize the project: install all dependencies, configure hooks, and set up the database
 init:
     @echo "Installing backend dependencies..."
     cd backend && uv sync --all-extras
@@ -483,6 +486,8 @@ init:
     cd client && npm install
     @echo "Installing Playwright browsers..."
     cd client && npx playwright install --with-deps
+    @echo "Configuring git hooks..."
+    just setup-hooks
     @echo "Starting database..."
     docker compose up -d
     @echo "Waiting for database to be ready..."
@@ -644,7 +649,7 @@ db-reset:
 
 ### Phase 7: Git Hooks
 
-Initialize git and set up two pre-push hooks. Both hooks run on every push.
+Initialize git, create project-local hooks, and **merge in missing behavior instead of overwriting** if `.githooks/pre-push` or `.git/hooks/pre-push` already exists.
 
 1. **Initialize git**:
    ```bash
@@ -662,50 +667,120 @@ Initialize git and set up two pre-push hooks. Both hooks run on every push.
    git config core.hooksPath .githooks
    ```
 
-4. **Create `.githooks/pre-push`**:
+4. **Create `.githooks/pre-push`** with four responsibilities: smoke tests, visual git report generation, Claude test-coverage verification, and Claude review/doc refresh.
 
    ```bash
    #!/usr/bin/env bash
    set -euo pipefail
 
+   DEFAULT_RANGE="HEAD~1..HEAD"
+   RANGE=""
+
+   while read -r local_ref local_oid remote_ref remote_oid; do
+       if [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
+           RANGE="${local_oid}"
+       else
+           RANGE="${remote_oid}..${local_oid}"
+       fi
+   done
+
+   RANGE="${RANGE:-$DEFAULT_RANGE}"
+   REPORT_DIR=".git/git-reports"
+   REPORT_PATH="${REPORT_DIR}/pre-push-latest.html"
+   mkdir -p "$REPORT_DIR"
+
    echo "=== Pre-push hook: Running smoke tests ==="
    just test-smoke
-   SMOKE_EXIT=$?
 
-   if [ $SMOKE_EXIT -ne 0 ]; then
-       echo "Smoke tests failed. Push aborted."
+   echo ""
+   echo "=== Pre-push hook: Generating visual git report ==="
+   claude --print --dangerously-skip-permissions \
+     "You are running inside a pre-push git hook.
+
+   Generate a visual git review for this range: ${RANGE}
+
+   Requirements:
+   - Use the git-visualizer skill/tooling.
+   - Render the diff for ${RANGE}.
+   - Save the HTML report to ${REPORT_PATH}.
+   - Do not open a browser.
+   - Print exactly one line in the form: REPORT_PATH: ${REPORT_PATH}
+
+   Helpful commands:
+   - git diff ${RANGE}
+   - git diff --name-only ${RANGE}"
+
+   echo "Report saved to ${REPORT_PATH}"
+   echo ""
+   echo "=== Pre-push hook: Verifying test coverage for pushed changes ==="
+
+   COVERAGE_OUTPUT=$(claude --print --dangerously-skip-permissions \
+     "You are running as a pre-push git hook for range ${RANGE}.
+
+   Review the upcoming changes and verify test coverage expectations before push.
+
+   Inspect:
+   - git diff ${RANGE}
+   - git diff --name-only ${RANGE}
+
+   Check whether changed behavior is covered by tests that already exist in the repo.
+   Focus especially on:
+   - new backend routes, services, DAOs, or business logic without matching backend tests
+   - new frontend pages, hooks, features, or state transitions without integration or E2E coverage
+   - bug fixes without a regression test
+   - risky conditionals, error handling paths, and edge cases with no test exercising them
+
+   Output rules:
+   - If coverage is sufficient, print exactly: TEST_COVERAGE: ok
+   - If coverage is missing, print one line per gap starting with: MISSING_TEST:
+   - After listing missing tests, print exactly one final line: TEST_COVERAGE: fail
+   - Be concrete: mention the changed file or behavior and the specific missing test that should exist
+   - Do not modify files
+   - Do not stage, commit, or amend anything")
+
+   printf '%s\n' "$COVERAGE_OUTPUT"
+
+   if printf '%s\n' "$COVERAGE_OUTPUT" | grep -q '^TEST_COVERAGE: fail$'; then
+       echo "Claude found missing test coverage for the pushed changes. Push aborted."
        exit 1
    fi
 
    echo ""
-   echo "=== Pre-push hook: Claude review & doc update ==="
-   # Get the range of commits being pushed
-   while read local_ref local_oid remote_ref remote_oid; do
-       if [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
-           # New branch — review all commits
-           RANGE="$local_oid"
-       else
-           RANGE="$remote_oid..$local_oid"
-       fi
-   done
+   echo "=== Pre-push hook: Claude review & doc refresh ==="
 
-   # Run Claude to review changes and update docs
-   claude --print --dangerously-skip-permissions \
-       "You are running as a pre-push git hook. Do the following two tasks:
+   CLAUDE_OUTPUT=$(claude --print --dangerously-skip-permissions \
+     "You are running as a pre-push git hook for range ${RANGE}.
 
-   1. **Code Review**: Review the changes in this push (commits: ${RANGE:-HEAD~1..HEAD}).
-      Run a quick review of the diff. If you find any blockers (security issues, broken logic, missing error handling), output them clearly and exit with a non-zero code.
+   Do two things:
 
-   2. **Update Documentation**: Based on the changes in this push, update the docs/ folder:
-      - If new endpoints were added, update docs/api.md
-      - If architecture changed, update docs/architecture.md
-      - If setup steps changed, update docs/development.md
-      - If the stack or main components changed, update CLAUDE.md
-      - Only update files that are actually affected by the changes
-      - Stage and amend the last commit with any doc changes
+   1. Review the diff for blockers.
+      - Inspect: git diff ${RANGE}
+      - If you find a blocker, print one line per blocker starting with: BLOCKER:
+      - If there are no blockers, print: BLOCKER: none
 
-   Review the diff with: git diff ${RANGE:-HEAD~1..HEAD}
-   Changed files: git diff --name-only ${RANGE:-HEAD~1..HEAD}"
+   2. Update documentation only if the changes require it.
+      - Check docs/api.md for endpoint changes
+      - Check docs/architecture.md for structural changes
+      - Check docs/development.md for setup/workflow changes
+      - Check README.md / CLAUDE.md when project usage or agent guidance changed
+      - Only edit files that are genuinely affected
+      - Do not stage, commit, or amend anything
+
+   After finishing, print exactly one summary line:
+   DOCS_UPDATED: yes|no")
+
+   printf '%s\n' "$CLAUDE_OUTPUT"
+
+   if printf '%s\n' "$CLAUDE_OUTPUT" | grep -q '^BLOCKER:' && \
+      ! printf '%s\n' "$CLAUDE_OUTPUT" | grep -q '^BLOCKER: none$'; then
+       echo "Claude reported blockers. Push aborted."
+       exit 1
+   fi
+
+   if [ -n "$(git status --porcelain -- docs README.md CLAUDE.md AGENTS.md)" ]; then
+       echo "Documentation was updated by the hook. Review the changes, commit them, and push again."
+       exit 1
+   fi
 
    echo "=== Pre-push hook complete ==="
    ```
@@ -715,16 +790,23 @@ Initialize git and set up two pre-push hooks. Both hooks run on every push.
    chmod +x .githooks/pre-push
    ```
 
-6. **Add hook path config to `just init`** — The `just init` recipe already handles this, but also add to the justfile:
+6. **Add hook setup to the `justfile`**:
    ```just
    # Configure git hooks
    setup-hooks:
        git config core.hooksPath .githooks
        chmod +x .githooks/pre-push
        @echo "Git hooks configured."
+       @echo "Pre-push will run smoke tests, write .git/git-reports/pre-push-latest.html, fail if Claude finds missing tests for the pushed changes, and stop if Claude finds blockers or documentation changes to review."
    ```
 
-   Update `just init` to include `just setup-hooks`.
+7. **Provide setup instructions to the user** in `README.md` or `docs/development.md`:
+   - Run `just setup-hooks` after cloning.
+   - Ensure the `claude` CLI is installed and authenticated.
+   - Ensure the `git-visualizer` skill is available to Claude, because the pre-push hook asks Claude to use it when generating the HTML report.
+   - Expect the hook to fail with `MISSING_TEST:` comments when changed behavior lacks adequate coverage; add the tests first, then push again.
+   - Open `.git/git-reports/pre-push-latest.html` after a push attempt if they want the visual diff artifact.
+   - If the hook updates docs, review the edits, commit them, and push again.
 
 ### Phase 8: Gitignore
 
@@ -797,9 +879,11 @@ logs/
 
 ## Post-Setup Notes
 
-- The `docs/` folder is automatically kept up to date by the pre-push git hook via Claude.
+- The pre-push hook generates `.git/git-reports/pre-push-latest.html` so every push attempt has a visual diff artifact.
+- The `docs/` folder is refreshed by the pre-push Claude step only when the pushed changes require it.
 - Smoke tests run on every push — if they fail, the push is blocked.
-- Claude reviews every push for blockers and updates documentation accordingly.
+- Claude also checks whether the pushed changes have adequate test coverage and aborts with `MISSING_TEST:` comments when tests are missing.
+- Claude reviews every push for blockers; if docs change, the push stops so the user can review and commit the documentation update first.
 - `AGENTS.md` is a symlink to `CLAUDE.md` — edit `CLAUDE.md` and both stay in sync.
 - **Ports are auto-assigned**: default is 8000 (backend) and 5173 (frontend), but if busy the next available port is used. The assigned ports are printed at startup. This allows multiple instances (dev + test, or multiple devs) to run simultaneously without collisions.
 - Use `just run` to start the full stack with hot reload during development.

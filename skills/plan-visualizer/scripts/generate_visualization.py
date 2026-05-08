@@ -422,6 +422,9 @@ def render_html(plan: dict) -> str:
     title = html.escape(plan.get("title", "Plan Visualization"))
     subtitle = render_inline(plan.get("subtitle", ""))
     profile = html.escape(plan.get("profile") or "PLAN")
+    theme = (plan.get("theme") or "dark").lower()
+    if theme not in ("dark", "light"):
+        theme = "dark"
     file_count = plan.get("file_count")
     step_count = plan.get("step_count")
     generated = html.escape(plan.get("generated") or date.today().isoformat())
@@ -535,6 +538,8 @@ def render_html(plan: dict) -> str:
         generated=generated,
         report_id=report_id,
         comments_enabled_js=("true" if _COMMENTS_ENABLED else "false"),
+        theme=theme,
+        mermaid_theme=("default" if theme == "light" else "dark"),
         columns=columns_html,
         file_manifest=file_manifest_html,
         diagrams=diagrams_html,
@@ -571,30 +576,88 @@ TEMPLATE = """<!DOCTYPE html>
 <title>{title}</title>
 <style>
   :root {{
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }}
+  /* Dark palette (default) */
+  body.theme-dark {{
     --bg: #0b0f14;
     --panel: #131922;
     --panel-alt: #182030;
     --border: #222b39;
     --border-strong: #2f3a4c;
     --text: #e6ebf2;
+    --text-soft: #d0d7e3;
+    --text-soft-2: #c3cbd8;
+    --strong: #f4f7fb;
     --muted: #8893a5;
     --dim: #5b6778;
+    --code-text: #c5e0ff;
+    --code-bg: rgba(110,168,254,0.08);
+    --code-border: rgba(110,168,254,0.15);
     --added: #3fb950;
     --added-bg: rgba(63,185,80,0.14);
+    --added-border: rgba(63,185,80,0.35);
     --changed: #f5b041;
     --changed-bg: rgba(245,176,65,0.14);
+    --changed-border: rgba(245,176,65,0.35);
     --removed: #f47272;
     --removed-bg: rgba(244,114,114,0.14);
+    --removed-border: rgba(244,114,114,0.35);
     --unchanged: #8893a5;
     --unchanged-bg: rgba(136,147,165,0.14);
+    --unchanged-border: rgba(136,147,165,0.35);
     --info: #6ea8fe;
     --info-bg: rgba(110,168,254,0.10);
+    --info-border: rgba(110,168,254,0.35);
     --high: #ff7a59;
     --high-bg: rgba(255,122,89,0.10);
+    --high-border: rgba(255,122,89,0.40);
     --critical: #ff4d4d;
     --critical-bg: rgba(255,77,77,0.12);
-    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --critical-border: rgba(255,77,77,0.45);
+    --pro-text: rgba(63,185,80,0.85);
+    --con-text: rgba(244,114,114,0.85);
+  }}
+  /* Light palette — clean, elegant, easy to read */
+  body.theme-light {{
+    --bg: #ffffff;
+    --panel: #fbfcfd;
+    --panel-alt: #f3f5f8;
+    --border: #e4e7ec;
+    --border-strong: #cdd2d9;
+    --text: #1c2230;
+    --text-soft: #2f3744;
+    --text-soft-2: #4a5364;
+    --strong: #0d1320;
+    --muted: #586173;
+    --dim: #8590a3;
+    --code-text: #0a4ea6;
+    --code-bg: rgba(9,105,218,0.06);
+    --code-border: rgba(9,105,218,0.18);
+    --added: #1a7f37;
+    --added-bg: rgba(26,127,55,0.08);
+    --added-border: rgba(26,127,55,0.30);
+    --changed: #9a6700;
+    --changed-bg: rgba(154,103,0,0.08);
+    --changed-border: rgba(154,103,0,0.30);
+    --removed: #cf222e;
+    --removed-bg: rgba(207,34,46,0.08);
+    --removed-border: rgba(207,34,46,0.30);
+    --unchanged: #6e7686;
+    --unchanged-bg: rgba(110,118,134,0.08);
+    --unchanged-border: rgba(110,118,134,0.30);
+    --info: #0969da;
+    --info-bg: rgba(9,105,218,0.06);
+    --info-border: rgba(9,105,218,0.25);
+    --high: #bc4c00;
+    --high-bg: rgba(188,76,0,0.06);
+    --high-border: rgba(188,76,0,0.30);
+    --critical: #a40e26;
+    --critical-bg: rgba(164,14,38,0.06);
+    --critical-border: rgba(164,14,38,0.30);
+    --pro-text: #1a7f37;
+    --con-text: #cf222e;
   }}
   html, body {{
     background: var(--bg);
@@ -731,27 +794,27 @@ TEMPLATE = """<!DOCTYPE html>
     border: 1px solid transparent;
     flex-shrink: 0;
   }}
-  .badge-added    {{ color: var(--added);    background: var(--added-bg);    border-color: rgba(63,185,80,0.35); }}
-  .badge-changed  {{ color: var(--changed);  background: var(--changed-bg);  border-color: rgba(245,176,65,0.35); }}
-  .badge-removed  {{ color: var(--removed);  background: var(--removed-bg);  border-color: rgba(244,114,114,0.35); }}
-  .badge-unchanged{{ color: var(--unchanged);background: var(--unchanged-bg);border-color: rgba(136,147,165,0.35); }}
+  .badge-added    {{ color: var(--added);    background: var(--added-bg);    border-color: var(--added-border); }}
+  .badge-changed  {{ color: var(--changed);  background: var(--changed-bg);  border-color: var(--changed-border); }}
+  .badge-removed  {{ color: var(--removed);  background: var(--removed-bg);  border-color: var(--removed-border); }}
+  .badge-unchanged{{ color: var(--unchanged);background: var(--unchanged-bg);border-color: var(--unchanged-border); }}
 
   .card-details {{
     list-style: none; padding: 0; margin: 0;
-    font-size: 12.5px; color: #c3cbd8;
+    font-size: 12.5px; color: var(--text-soft-2);
   }}
   .card-details li {{ padding: 2px 0 2px 14px; position: relative; }}
   .card-details li::before {{ content: "·"; color: var(--dim); position: absolute; left: 4px; font-weight: 700; }}
   code.inline {{
     font-family: var(--mono);
     font-size: 11.5px;
-    color: #c5e0ff;
-    background: rgba(110,168,254,0.08);
+    color: var(--code-text);
+    background: var(--code-bg);
     padding: 1px 5px;
     border-radius: 3px;
-    border: 1px solid rgba(110,168,254,0.15);
+    border: 1px solid var(--code-border);
   }}
-  strong {{ color: #f4f7fb; font-weight: 600; }}
+  strong {{ color: var(--strong); font-weight: 600; }}
 
   .section {{
     background: var(--panel);
@@ -784,12 +847,12 @@ TEMPLATE = """<!DOCTYPE html>
 
   .section-prose .prose-p {{
     margin: 0 0 12px;
-    color: #d0d7e3;
+    color: var(--text-soft);
     font-size: 13.5px;
   }}
   .section-prose .prose-p:last-child {{ margin-bottom: 0; }}
 
-  .bullet-row {{ display: flex; gap: 10px; padding: 4px 0; font-size: 13px; color: #d0d7e3; }}
+  .bullet-row {{ display: flex; gap: 10px; padding: 4px 0; font-size: 13px; color: var(--text-soft); }}
   .bullet-symbol {{ flex-shrink: 0; width: 16px; text-align: center; font-weight: 700; }}
   .sym-arrow   {{ color: var(--added); }}
   .sym-diamond {{ color: #6ea8fe; }}
@@ -864,10 +927,10 @@ TEMPLATE = """<!DOCTYPE html>
   .pro-head {{ color: var(--added); }}
   .con-head {{ color: var(--removed); }}
   .tradeoff-list {{ list-style: none; padding: 0; margin: 0; font-size: 12.5px; }}
-  .tradeoff-list li {{ padding: 2px 0 2px 14px; position: relative; color: #c3cbd8; }}
+  .tradeoff-list li {{ padding: 2px 0 2px 14px; position: relative; color: var(--text-soft-2); }}
   .tradeoff-list li::before {{ content: "·"; color: var(--dim); position: absolute; left: 4px; font-weight: 700; }}
-  .pro-item {{ color: rgba(63,185,80,0.85); }}
-  .con-item {{ color: rgba(244,114,114,0.85); }}
+  .pro-item {{ color: var(--pro-text); }}
+  .con-item {{ color: var(--con-text); }}
 
   /* Alternatives */
   .sym-alt {{ color: var(--muted); }}
@@ -879,7 +942,7 @@ TEMPLATE = """<!DOCTYPE html>
     margin-bottom: 12px;
   }}
   .alt-title {{ font-weight: 600; font-size: 13px; color: var(--text); margin-bottom: 4px; }}
-  .alt-desc  {{ font-size: 12.5px; color: #c3cbd8; margin-bottom: 6px; }}
+  .alt-desc  {{ font-size: 12.5px; color: var(--text-soft-2); margin-bottom: 6px; }}
   .alt-rejected {{ font-size: 12px; color: var(--muted); font-style: italic; }}
   .alt-rejected-label {{ color: var(--removed); font-style: normal; font-weight: 600; }}
 
@@ -917,7 +980,7 @@ TEMPLATE = """<!DOCTYPE html>
     margin-bottom: 6px;
   }}
   .report-card-title {{ font-weight: 600; font-size: 13px; color: var(--text); }}
-  .report-card-body  {{ font-size: 12.5px; color: #c3cbd8; }}
+  .report-card-body  {{ font-size: 12.5px; color: var(--text-soft-2); }}
   .tone-badge {{
     font-family: var(--mono);
     font-size: 9.5px;
@@ -927,15 +990,15 @@ TEMPLATE = """<!DOCTYPE html>
     border: 1px solid transparent;
   }}
   .tone-good     {{ border-left-color: var(--added);  }}
-  .tone-good     .tone-badge {{ color: var(--added);    background: var(--added-bg);    border-color: rgba(63,185,80,0.35); }}
+  .tone-good     .tone-badge {{ color: var(--added);    background: var(--added-bg);    border-color: var(--added-border); }}
   .tone-info     {{ border-left-color: var(--info);    }}
-  .tone-info     .tone-badge {{ color: var(--info);     background: var(--info-bg);     border-color: rgba(110,168,254,0.35); }}
+  .tone-info     .tone-badge {{ color: var(--info);     background: var(--info-bg);     border-color: var(--info-border); }}
   .tone-warn     {{ border-left-color: var(--changed); }}
-  .tone-warn     .tone-badge {{ color: var(--changed);  background: var(--changed-bg);  border-color: rgba(245,176,65,0.35); }}
+  .tone-warn     .tone-badge {{ color: var(--changed);  background: var(--changed-bg);  border-color: var(--changed-border); }}
   .tone-high     {{ border-left-color: var(--high);    }}
-  .tone-high     .tone-badge {{ color: var(--high);     background: var(--high-bg);     border-color: rgba(255,122,89,0.40); }}
+  .tone-high     .tone-badge {{ color: var(--high);     background: var(--high-bg);     border-color: var(--high-border); }}
   .tone-critical {{ border-left-color: var(--critical);}}
-  .tone-critical .tone-badge {{ color: var(--critical); background: var(--critical-bg); border-color: rgba(255,77,77,0.45);  }}
+  .tone-critical .tone-badge {{ color: var(--critical); background: var(--critical-bg); border-color: var(--critical-border);  }}
 
   /* Comment widget */
   .comment-widget {{
@@ -1110,7 +1173,7 @@ TEMPLATE = """<!DOCTYPE html>
   }}
 </style>
 </head>
-<body data-comments-enabled="{comments_enabled_js}" data-report-id="{report_id}">
+<body class="theme-{theme}" data-comments-enabled="{comments_enabled_js}" data-report-id="{report_id}">
   <div class="page">
     <header class="top">
       <div class="top-left">
@@ -1160,21 +1223,32 @@ TEMPLATE = """<!DOCTYPE html>
     (function() {{
       // ---- Mermaid init ----
       var mermaidBlocks = document.querySelectorAll('.mermaid');
+      var isLight = document.body.classList.contains('theme-light');
+      var mermaidVars = isLight ? {{
+        primaryColor: '#f3f5f8',
+        primaryTextColor: '#1c2230',
+        primaryBorderColor: '#cdd2d9',
+        lineColor: '#586173',
+        secondaryColor: '#fbfcfd',
+        tertiaryColor: '#ffffff',
+        fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
+        fontSize: '13px'
+      }} : {{
+        primaryColor: '#182030',
+        primaryTextColor: '#e6ebf2',
+        primaryBorderColor: '#2f3a4c',
+        lineColor: '#5b6778',
+        secondaryColor: '#131922',
+        tertiaryColor: '#0b0f14',
+        fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
+        fontSize: '13px'
+      }};
       if (mermaidBlocks.length > 0 && typeof mermaid !== 'undefined') {{
         try {{
           mermaid.initialize({{
             startOnLoad: true,
-            theme: 'dark',
-            themeVariables: {{
-              primaryColor: '#182030',
-              primaryTextColor: '#e6ebf2',
-              primaryBorderColor: '#2f3a4c',
-              lineColor: '#5b6778',
-              secondaryColor: '#131922',
-              tertiaryColor: '#0b0f14',
-              fontFamily: '-apple-system, BlinkMacSystemFont, Inter, Segoe UI, Roboto, sans-serif',
-              fontSize: '13px'
-            }}
+            theme: '{mermaid_theme}',
+            themeVariables: mermaidVars
           }});
         }} catch (e) {{
           mermaidBlocks.forEach(function(el) {{
