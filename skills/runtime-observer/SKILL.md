@@ -1,7 +1,7 @@
 ---
 name: runtime-observer
 description: Onboard new applications onto Runtime Observer and inspect their logs, traces, errors, dependencies, and metrics through a project API key. Use when instrumenting a new app, wiring up the SDK, debugging a running application that ships telemetry to a Runtime Observer collector, investigating an incident, hunting a slow route, finding a failing dependency, or building a postmortem from production data.
-version: 1.1.0
+version: 1.1.2
 requires:
   bins:
     - python3
@@ -92,12 +92,49 @@ The Python SDK has **zero hard dependencies**. Instrumentation modules (FastAPI,
 SQLAlchemy, requests, httpx, litellm) are loaded lazily and only fire if
 the target library is already importable in your app.
 
-For JavaScript applications, install the single SDK package and choose the
-runtime-specific entrypoint:
+For JavaScript applications, the SDK lives in this repository under
+`js-sdk/`, with package metadata at the repository root. It is not a
+published npm package. Prefer the host project's existing frontend setup
+recipe (for example `just setup-frontend`) and add the dependency in the
+form that matches how that project consumes unpublished packages.
+
+If the Runtime Observer repository is already checked out locally, install
+from the repository root. npm will read the root `package.json` and expose
+the `js-sdk/` entrypoints:
+
+```bash
+npm install /absolute/path/to/runtime-observer
+npm install runtime-observer@file:/absolute/path/to/runtime-observer
+```
+
+If you need a portable artifact, build a tarball from the Runtime Observer
+repository root and install that file in the target app:
+
+```bash
+just pack-js-sdk
+npm install /absolute/path/to/runtime-observer/runtime-observer-0.2.0.tgz
+```
+
+or in `package.json`:
+
+```json
+{
+  "dependencies": {
+    "runtime-observer": "file:/absolute/path/to/runtime-observer"
+  }
+}
+```
+
+For the normal GitHub install, use:
 
 ```bash
 npm install runtime-observer@github:germanilia/runtime-observer
 ```
+
+If this fails with `Could not read package.json ... git-clone.../package.json`,
+verify that GitHub still reports `main` as the repository default branch.
+Do not try to install from a subdirectory — npm Git dependencies do not
+support pip-style `#subdirectory=...` fragments.
 
 Use `runtime-observer/browser` in frontend bundles and
 `runtime-observer/node` in backend services. Do not use the legacy
