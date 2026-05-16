@@ -1,7 +1,7 @@
 ---
 name: runtime-observer
-description: Inspect logs, traces, errors, dependencies, and metrics from a Runtime Observer collector using a project API key. Use when debugging a running application that ships telemetry to a Runtime Observer collector, investigating an incident, hunting a slow route, finding a failing dependency, or building a postmortem from production data.
-version: 1.0.0
+description: Onboard new applications onto Runtime Observer and inspect their logs, traces, errors, dependencies, and metrics through a project API key. Use when instrumenting a new app, wiring up the SDK, debugging a running application that ships telemetry to a Runtime Observer collector, investigating an incident, hunting a slow route, finding a failing dependency, or building a postmortem from production data.
+version: 1.1.0
 requires:
   bins:
     - python3
@@ -16,11 +16,324 @@ requires:
 
 # Runtime Observer Agent Skill
 
-This skill lets an autonomous agent debug an application by reading from a
-Runtime Observer collector. The agent uses the same authentication model as
-the SDK — a **project API key** generated in the dashboard — and is scoped
-to that single project. No SDK install is required; everything goes over
-HTTP with the standard library.
+This skill does two things:
+
+1. **Onboard a new application** onto Runtime Observer — install the SDK,
+   generate a project API key, configure env vars, instrument FastAPI /
+   logging / DB / HTTP / LLM calls, and verify telemetry is flowing.
+2. **Inspect a running application** that already ships telemetry — read
+   logs, traces, errors, dependencies, and metrics through the collector's
+   project-scoped agent API, using the included CLI or Python client.
+
+Both use the same auth model: a **project API key** generated in the
+collector dashboard. No SDK install is required for inspection — the
+agent client uses only the standard library.
+
+## Part 1 — Onboard a new application (install the SDK)
+
+Follow this exact sequence when adding Runtime Observer to a new Python
+app you're developing. It takes about 5 minutes.
+
+### Step 1 — Make sure a collector is running
+
+You need a collector reachable from the app. Two options:
+
+**Local development.** Clone the repo once and run the collector with
+live reload:
+
+```bash
+git clone https://github.com/germanilia/runtime-observer.git
+cd runtime-observer
+just init           # installs editable SDK + collector and configures git hooks
+just run            # boots http://127.0.0.1:4319 with live reload
+```
+
+The dashboard opens at `http://127.0.0.1:4319/`. The first login creates
+the admin user — pick any username + password.
+
+**Remote / shared collector.** Set `RUNTIME_OBSERVER_URL` to its base URL
+(e.g. `https://observer.acme.com`). Skip the local boot.
+
+### Step 2 — Create a project and generate a project API key
+
+1. Open the dashboard, log in.
+2. The post-login screen lists projects — click **New project** (or just
+   start ingesting with a key; the project is auto-created on first
+   event).
+3. Open the project → **API keys** → **Generate**. Copy the `ro_...`
+   token immediately; it is shown only once.
+
+Tip: a project usually corresponds to a logical product (e.g.
+`checkout`, `crm`, `internal-assistant`). Each microservice inside that
+product becomes an **app** (`backend`, `worker`, etc.) — apps share the
+project key.
+
+### Step 3 — Install the SDK in your application
+
+Install directly from GitHub (no PyPI publish needed):
+
+```bash
+pip install 'runtime-observer @ git+https://github.com/germanilia/runtime-observer.git#subdirectory=python-sdk'
+```
+
+Or with `uv`:
+
+```bash
+uv pip install 'runtime-observer @ git+https://github.com/germanilia/runtime-observer.git#subdirectory=python-sdk'
+```
+
+Or pin to a commit / tag for reproducibility:
+
+```bash
+pip install 'runtime-observer @ git+https://github.com/germanilia/runtime-observer.git@<sha-or-tag>#subdirectory=python-sdk'
+```
+
+The Python SDK has **zero hard dependencies**. Instrumentation modules (FastAPI,
+SQLAlchemy, requests, httpx, litellm) are loaded lazily and only fire if
+the target library is already importable in your app.
+
+For JavaScript applications, install the single SDK package and choose the
+runtime-specific entrypoint:
+
+```bash
+npm install runtime-observer@github:germanilia/runtime-observer
+```
+
+Use `runtime-observer/browser` in frontend bundles and
+`runtime-observer/node` in backend services. Do not use the legacy
+`runtime-observer-browser` package name for new installs.
+
+### Step 4 — Configure environment variables
+
+Set these in your `.env`, deployment manifest, or shell:
+
+```bash
+RUNTIME_OBSERVER_ENABLED=true
+RUNTIME_OBSERVER_ENDPOINT=http://127.0.0.1:4319          # collector URL
+RUNTIME_OBSERVER_API_KEY=ro_xxxxxxxx_xxxxxxxxxxxxxxxxxxxx # project key from step 2
+RUNTIME_OBSERVER_PROJECT_NAME=checkout                    # must match the project the key belongs to
+RUNTIME_OBSERVER_SERVICE_NAME=backend                     # short logical name for this app
+RUNTIME_OBSERVER_CAPTURE_MODE=dev                         # `dev` keeps DB query values; `prod` strips them
+# Optional
+RUNTIME_OBSERVER_DISPLAY_NAME="Checkout backend"
+RUNTIME_OBSERVER_ENVIRONMENT=development
+RUNTIME_OBSERVER_LOG_LEVELS=INFO,WARNING,ERROR,CRITICAL
+```
+
+`RUNTIME_OBSERVER_PROJECT_NAME` is **required** for the SDK exporter to
+enable itself. If unset, the SDK stays quiet — useful for tests.
+
+### Step 5 — Wire the SDK into the app
+
+#### FastAPI (the common case)
+
+```python
+# main.py
+from fastapi import FastAPI
+from runtime_observer import init_runtime_observer
+
+app = FastAPI()
+observer = init_runtime_observer.from_env(service_name="backend")
+observer.instrument_fastapi(app)
+
+# That's it. Routes, requests, exceptions, stdlib logging, SQLAlchemy
+# queries, requests/httpx outbound calls, and LiteLLM calls are auto-
+# instrumented if those packages are importable.
+```
+
+Run it normally:
+
+```bash
+uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+#### Plain Python script / non-FastAPI service
+
+```python
+import logging
+from runtime_observer import init_runtime_observer
+
+logging.basicConfig(level=logging.INFO)
+observer = init_runtime_observer.from_env(service_name="worker")
+
+logging.info("worker booting")
+
+# Wrap a unit of work in a span:
+with observer.start_span("nightly_rollup", kind="job"):
+    do_work()
+
+# Capture an exception explicitly:
+try:
+    risky()
+except Exception as exc:
+    observer.capture_exception(exc, extra={"job_id": "1234"})
+    raise
+
+observer.flush(timeout=2.0)   # before exit
+```
+
+#### Optional manual instrumentation
+
+`observer.instrument_fastapi(app)` is the only call you need for a
+FastAPI app. The constructor already auto-instruments SQLAlchemy /
+requests / httpx / LiteLLM when they're importable. If you want to be
+explicit (e.g. for non-FastAPI processes):
+
+```python
+observer.instrument_logging()        # stdlib logging → log_record events
+observer.instrument_sqlalchemy()     # any engine created after this point
+observer.instrument_requests()       # `requests` outbound calls
+observer.instrument_httpx()          # `httpx` outbound calls
+observer.instrument_litellm()        # LiteLLM / OpenAI-style calls
+```
+
+#### JavaScript / Node.js backend
+
+```js
+import express from 'express';
+import { initRuntimeObserver } from 'runtime-observer/node';
+
+const observer = initRuntimeObserver.fromEnv({ serviceName: 'backend' });
+observer.instrumentFetch();
+
+const app = express();
+observer.instrumentExpress(app);
+
+app.get('/work', async (_req, res) => {
+  await observer.startSpan('doWork', () => doWork(), { kind: 'function' });
+  res.json({ ok: true });
+});
+
+process.on('beforeExit', () => observer.shutdown());
+```
+
+The Node entrypoint resolves the same `RUNTIME_OBSERVER_*` environment
+variables, batches events, keeps async trace context, emits startup and
+dependency inventory events, and uses `Authorization: Bearer ...` for
+ingest.
+
+#### JavaScript browser frontend
+
+```js
+import { initBrowserObserver } from 'runtime-observer/browser';
+
+const observer = initBrowserObserver({
+  endpoint: 'http://127.0.0.1:4319',
+  apiKey: 'ro_xxxxxxxx_project_key_from_dashboard',
+  projectName: 'checkout',
+  serviceName: 'frontend',
+});
+
+observer.installBrowserHooks();
+observer.instrumentFetch();
+observer.captureNavigation();
+observer.emit('log_record', {
+  level: 'INFO',
+  logger_name: 'browser.app',
+  message: 'frontend started',
+});
+```
+
+The browser entrypoint uses the browser ingest endpoint with `?api_key=...`,
+redacts payloads client-side, captures global errors/unhandled promises,
+and flushes with `sendBeacon` when available.
+
+### Step 6 — Verify telemetry is flowing
+
+Hit a few routes, then check:
+
+```bash
+# Quick CLI smoke check (uses the agent API — same key as the SDK)
+export RUNTIME_OBSERVER_API_KEY="ro_xxxxxxxx_xxxxxxxxxxxxxxxxxxxx"
+export RUNTIME_OBSERVER_URL="http://127.0.0.1:4319"
+OBSERVER="/absolute/path/from-attached-files/scripts/observer.py"
+
+python3 "$OBSERVER" info        # confirms project + apps appear
+python3 "$OBSERVER" routes      # confirms route_discovered events
+python3 "$OBSERVER" traces      # confirms request_started/finished events
+python3 "$OBSERVER" logs --level INFO
+```
+
+You should see your `service_name` in `info.apps`, your routes in
+`routes`, and recent traces in `traces`. If nothing appears:
+
+- Check the app's logs for a `sdk_diagnostic` line — instrumentation
+  failures are emitted there.
+- Confirm `RUNTIME_OBSERVER_ENABLED=true` and that
+  `RUNTIME_OBSERVER_PROJECT_NAME` is set.
+- Confirm the API key belongs to the same project name. The collector
+  rewrites the per-event `project_name` to the key's project — so a
+  mismatched env var won't break ingest, but the app will appear under
+  the project the **key** is bound to.
+
+### Step 7 — Lock down for production
+
+When the same app is deployed to staging or prod, change the env vars:
+
+```bash
+RUNTIME_OBSERVER_CAPTURE_MODE=prod           # strips DB query parameter values
+RUNTIME_OBSERVER_ENVIRONMENT=production
+RUNTIME_OBSERVER_ENDPOINT=https://observer.acme.com
+RUNTIME_OBSERVER_API_KEY=<a NEW project key issued for prod>
+RUNTIME_OBSERVER_LOG_LEVELS=WARNING,ERROR,CRITICAL  # cut log volume
+```
+
+Issue **separate API keys per environment** so the dashboard can
+distinguish dev / staging / prod traffic and so you can revoke a
+leaked key without affecting other environments.
+
+### Reference card — onboarding env vars
+
+| Variable | Required? | Default | Meaning |
+|---|---|---|---|
+| `RUNTIME_OBSERVER_API_KEY` | ✅ | — | Project API key. |
+| `RUNTIME_OBSERVER_ENDPOINT` | ✅ | `http://127.0.0.1:4319` | Collector base URL. |
+| `RUNTIME_OBSERVER_PROJECT_NAME` | ✅ | — | Project — required to enable exporter. |
+| `RUNTIME_OBSERVER_SERVICE_NAME` | ✅ | — | App / service name inside the project. |
+| `RUNTIME_OBSERVER_ENABLED` | optional | `true` | Master on/off switch. |
+| `RUNTIME_OBSERVER_CAPTURE_MODE` | optional | `dev` | `dev` keeps query values, `prod` strips them. |
+| `RUNTIME_OBSERVER_DISPLAY_NAME` | optional | service name | Friendly label in the dashboard. |
+| `RUNTIME_OBSERVER_ENVIRONMENT` | optional | derived | `development` / `staging` / `production`. |
+| `RUNTIME_OBSERVER_CAPTURE_LOGS` | optional | `true` | Forward stdlib + loguru log records. |
+| `RUNTIME_OBSERVER_LOG_LEVELS` | optional | all | Comma-separated allowed log levels. |
+| `RUNTIME_OBSERVER_LOG_LEVEL` | optional | — | Minimum level (alternative to listing levels). |
+| `RUNTIME_OBSERVER_BATCH_SIZE` | optional | `100` | Events per export batch. |
+| `RUNTIME_OBSERVER_FLUSH_INTERVAL_SECONDS` | optional | `2.0` | Forced flush cadence. |
+| `RUNTIME_OBSERVER_MAX_QUEUE_SIZE` | optional | `1000` | Drop threshold if collector is unreachable. |
+| `RUNTIME_OBSERVER_CAPTURE_DB_QUERY_VALUES` | optional | mode-dependent | Override the DB value-capture default. |
+| `RUNTIME_OBSERVER_INSECURE_LOCAL_DEV` | optional | `false` | Allow exporting without an API key (local only). |
+
+### What gets captured automatically
+
+When the SDK boots it emits:
+
+- `app_started` + `dependency_inventory` (installed packages).
+- `route_discovered` for every FastAPI route.
+- `request_started` / `request_finished` (with status, duration, method,
+  path) per HTTP request.
+- `log_record` for every stdlib / loguru log line at the configured
+  levels.
+- `db_query` for SQLAlchemy queries (statement fingerprint, tables,
+  duration, parameters in `dev` mode).
+- `http_client_call` for `requests` and `httpx` outbound calls.
+- `llm_call` for LiteLLM / OpenAI-style calls (provider, model, token
+  counts, duration).
+- `exception_raised` for unhandled exceptions inside instrumented routes
+  (plus anything you forward via `observer.capture_exception`).
+- `span_started` / `span_finished` for custom spans you wrap with
+  `observer.start_span(...)`.
+
+All payloads run through SDK + collector redaction (bearer tokens, JWTs,
+AWS access keys, `password` / `secret` / `api_key` / `token` fields) so
+secrets do not land in the dashboard.
+
+---
+
+## Part 2 — Inspect a running application
+
+This is the agent-debugging path. The collector exposes a project-scoped
+read API at `/v1/agent/*` authenticated with the same project API key.
+The two scripts under `scripts/` wrap it.
 
 ## When to use
 
