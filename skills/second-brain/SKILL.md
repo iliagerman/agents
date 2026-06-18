@@ -48,6 +48,7 @@ Full conventions: `references/structure.md`. The placement decision rules:
 | `search <q> [--top N]` | fuzzy-find notes (typo/phrase tolerant) | to **recall**, and **before adding** (dedupe + find home) |
 | `add-cluster --parent P --name SLUG --title T --desc D` | create a cluster + link it in its parent | **only** when placement says "new cluster" |
 | `add-note --cluster C --title T [--summary S] [--tags a,b]` (body on stdin) | create a note + link it in the cluster | after the target cluster is decided |
+| `delete-note <path>` | delete a note + remove its index link | when the user asks to remove/delete a note |
 | `check [path]` | report `index.md` drift vs real files | **after every change**, until clean |
 
 > **Hard rule:** never create/edit files under `BRAIN_ROOT` with raw Write/Edit
@@ -82,6 +83,10 @@ Full conventions: `references/structure.md`. The placement decision rules:
 
 `search "<question>"` → `show` the top hits → answer **citing** the notes by path.
 If nothing relevant comes back, say so — it's a gap to fill, not a reason to guess.
+
+## Deleting a note — the workflow
+
+`search "<description of note>"` → `show` the matching note to confirm → `delete-note <path>` → `check` from the affected cluster up to root until clean → confirm the deleted path.
 
 ## Setup
 

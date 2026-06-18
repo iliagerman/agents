@@ -75,6 +75,13 @@ How writes split between tool and agent:
 - **Then:** `check` from the cluster up to root; curate the note body and its index
   summary for readability; confirm the breadcrumb path to the user.
 
+## `delete-note <path>`
+- **Purpose:** delete a note and remove its link from the containing cluster index.
+- **When:** when the user asks to delete/remove a note from the second brain.
+- **Preconditions:** run `search` and usually `show` first so you delete the intended note.
+- **Args:** `path` is brain-relative, e.g. `travel/poland-slovakia-2026/car-rental-booking.md`.
+- **Then:** run `check` from the affected cluster up to root until clean and confirm the deleted path.
+
 ## `check [path]`
 - **Purpose:** report drift between `index.md` files and the real files — notes or
   sub-clusters not linked, and stale links pointing at files that don't exist.
@@ -94,4 +101,6 @@ How writes split between tool and agent:
   until `✓` → confirm path.
 - **Recall:** `search "<question>"` → `show` top hits → cited answer (or say it's a
   gap).
+- **Delete a note:** `search "<description>"` → `show` likely match → `delete-note <path>` →
+  `check` until `✓` → confirm deletion.
 - **Audit/reorganize:** `tree` → `check` → repair indexes → `check` until `✓`.

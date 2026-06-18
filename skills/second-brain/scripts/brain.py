@@ -139,8 +139,19 @@ def _link_targets(text: str) -> set[str]:
     return {m.group(1).split("#")[0] for m in LINK_RE.finditer(text)}
 
 
+def _remove_link_to_target(text: str, target: str) -> str:
+    """Remove markdown bullet lines that link to target."""
+    kept: list[str] = []
+    for line in text.splitlines():
+        targets = _link_targets(line)
+        if line.lstrip().startswith("-") and target in targets:
+            continue
+        kept.append(line)
+    return "\n".join(kept) + ("\n" if text.endswith("\n") else "")
+
+
 # --------------------------------------------------------------------------- #
-# add-cluster / add-note
+# add-cluster / add-note / delete-note
 # --------------------------------------------------------------------------- #
 def cmd_add_cluster(store: Storage, args) -> int:
     parent = args.parent.strip("/").removesuffix("/index.md")
@@ -203,6 +214,31 @@ def cmd_add_note(store: Storage, args) -> int:
         store.write_text(index_rel, _append_under_heading(itext, "Notes", link))
 
     print(f"created note {note_rel}")
+    return 0
+
+
+def cmd_delete_note(store: Storage, args) -> int:
+    note_rel = args.path.strip("/")
+    if not note_rel or note_rel.endswith("/") or note_rel.endswith("index.md"):
+        print(
+            "delete-note requires a brain-relative note path, not a cluster index",
+            file=sys.stderr,
+        )
+        return 1
+    if not note_rel.endswith(".md"):
+        note_rel = f"{note_rel}.md"
+    if not store.exists(note_rel):
+        print(f"note not found: {note_rel}", file=sys.stderr)
+        return 1
+
+    parent, _, filename = note_rel.rpartition("/")
+    index_rel = store._join(parent, "index.md")
+    if store.exists(index_rel):
+        index_text = store.read_text(index_rel)
+        store.write_text(index_rel, _remove_link_to_target(index_text, filename))
+
+    store.delete(note_rel)
+    print(f"deleted note {note_rel}")
     return 0
 
 
@@ -272,6 +308,9 @@ def main() -> int:
     p_an.add_argument("--summary", default="", help="one-line summary for the index")
     p_an.add_argument("--tags", default="", help="comma-separated")
 
+    p_dn = sub.add_parser("delete-note", help="delete a note + remove its index link")
+    p_dn.add_argument("path", help="brain-relative note path")
+
     p_chk = sub.add_parser("check", help="report index.md drift")
     p_chk.add_argument("path", nargs="?", default="", help="subtree to check (default: root)")
 
@@ -280,7 +319,8 @@ def main() -> int:
     dispatch = {
         "init": cmd_init,
         "tree": cmd_tree, "show": cmd_show, "search": cmd_search,
-        "add-cluster": cmd_add_cluster, "add-note": cmd_add_note, "check": cmd_check,
+        "add-cluster": cmd_add_cluster, "add-note": cmd_add_note,
+        "delete-note": cmd_delete_note, "check": cmd_check,
     }
     return dispatch[args.cmd](store, args)
 
