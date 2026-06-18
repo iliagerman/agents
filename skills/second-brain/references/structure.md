@@ -25,7 +25,7 @@ $BRAIN_ROOT/
 
 ## `index.md` (the human-readable cluster map)
 
-Created from `templates/cluster-index.md`. Shape:
+Created from `assets/cluster-index.md`. Shape:
 
 ```markdown
 ---
@@ -59,7 +59,7 @@ Trips and destinations.            ← curated description of the cluster's subj
 
 ## Notes
 
-Created from `templates/note.md`:
+Created from `assets/note.md`:
 
 ```markdown
 ---

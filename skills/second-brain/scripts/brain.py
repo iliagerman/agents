@@ -36,7 +36,7 @@ def _today() -> str:
 
 def _read_template(name: str) -> str:
     from pathlib import Path
-    return (Path(__file__).resolve().parent.parent / "templates" / name).read_text("utf-8")
+    return (Path(__file__).resolve().parent.parent / "assets" / name).read_text("utf-8")
 
 
 # --------------------------------------------------------------------------- #
