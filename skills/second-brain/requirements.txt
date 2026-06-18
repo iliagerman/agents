@@ -1,0 +1,9 @@
+# second-brain skill dependencies
+#   pip install -r requirements.txt
+
+# Fuzzy search (brain.py search / fuzzy.py). Always required.
+rapidfuzz>=3.0
+
+# S3 backend — only needed when BRAIN_ROOT is an s3:// URI.
+# Harmless to install for local-only use; remove this line if you never use S3.
+boto3>=1.34
