@@ -7,8 +7,9 @@ requires:
     - python3
   env:
     - name: BRAIN_ROOT
-      prompt: "Absolute path to the brain — a local folder (e.g. /data/brain) OR an S3 URI (e.g. s3://my-bucket/brain). The scripts pick the backend from the path shape automatically."
-      example: "/Users/me/second-brain"
+      required: false
+      prompt: "Absolute path to the brain. Leave empty to use the default $HOME/second_brain. For the homeserver deployment, use /home/ilia/second_brain. S3 URIs are also supported (e.g. s3://my-bucket/brain)."
+      example: "/home/ilia/second_brain"
 ---
 
 # second-brain
@@ -28,10 +29,11 @@ $BRAIN_ROOT/index.md            ← the one entry point
 - A **cluster** = a folder + an `index.md` that describes its subject and links its
   sub-clusters and notes (human-readable; you maintain it).
 - A **note** = a markdown file inside a cluster.
-- Everything is plain markdown under **one path**, `BRAIN_ROOT`. If that path is an
-  `s3://…` URI the scripts use S3 internally; otherwise it's a local folder. You
-  never write S3-specific code, and mounting/syncing that path is a deployment
-  concern, not the skill's.
+- Everything is plain markdown under **one path**, `BRAIN_ROOT`. If `BRAIN_ROOT`
+  is unset or empty, the scripts default it to `$HOME/second_brain` and create the
+  folder if needed. If the value is an `s3://…` URI the scripts use S3 internally;
+  otherwise it's a local folder. You never write S3-specific code, and
+  mounting/syncing that path is a deployment concern, not the skill's.
 
 Full conventions: `references/structure.md`. The placement decision rules:
 `references/placement.md`. The complete per-command contract: `references/commands.md`.
@@ -84,7 +86,7 @@ If nothing relevant comes back, say so — it's a gap to fill, not a reason to g
 ## Setup
 
 ```bash
-export BRAIN_ROOT="$HOME/second-brain"      # or s3://my-bucket/brain
+export BRAIN_ROOT="$HOME/second_brain"      # optional; this is the default. Homeserver: /home/ilia/second_brain
 pip install -r requirements.txt              # rapidfuzz (search) + boto3 (only for s3://)
 python3 scripts/brain.py init                # once
 ```

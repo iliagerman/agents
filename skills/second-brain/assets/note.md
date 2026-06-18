@@ -1,11 +1,11 @@
 ---
-title: {{TITLE}}
+title: __TITLE__
 type: note
-created: {{DATE}}
-updated: {{DATE}}
-tags: [{{TAGS}}]
+created: __DATE__
+updated: __DATE__
+tags: __TAGS_YAML__
 ---
 
-# {{TITLE}}
+# __TITLE__
 
-{{BODY}}
+__BODY__

@@ -1,15 +1,15 @@
 ---
-title: {{TITLE}}
+title: __TITLE__
 type: cluster
-created: {{DATE}}
-updated: {{DATE}}
+created: __DATE__
+updated: __DATE__
 ---
 
-# {{TITLE}}
+# __TITLE__
 
-Parent: [up]({{BREADCRUMB}})
+Parent: [up](__BREADCRUMB__)
 
-{{DESC}}
+__DESC__
 
 ## Sub-clusters
 

@@ -71,11 +71,11 @@ def cmd_init(store: Storage, args) -> int:
         return 0
     tmpl = _read_template("cluster-index.md")
     content = (tmpl
-               .replace("{{TITLE}}", args.title)
-               .replace("{{DESC}}", "Single entry point. Top-level clusters group "
+               .replace("__TITLE__", args.title)
+               .replace("__DESC__", "Single entry point. Top-level clusters group "
                         "everything by subject; descend to find notes.")
-               .replace("{{BREADCRUMB}}", "index.md")  # root points at itself
-               .replace("{{DATE}}", _today()))
+               .replace("__BREADCRUMB__", "index.md")  # root points at itself
+               .replace("__DATE__", _today()))
     # Root has no parent — drop the breadcrumb line.
     content = content.replace("Parent: [up](index.md)\n\n", "")
     store.write_text("index.md", content)
@@ -156,10 +156,10 @@ def cmd_add_cluster(store: Storage, args) -> int:
     breadcrumb = "../index.md" if parent else "../index.md"
     tmpl = _read_template("cluster-index.md")
     content = (tmpl
-               .replace("{{TITLE}}", args.title)
-               .replace("{{DESC}}", args.desc)
-               .replace("{{BREADCRUMB}}", breadcrumb)
-               .replace("{{DATE}}", _today()))
+               .replace("__TITLE__", args.title)
+               .replace("__DESC__", args.desc)
+               .replace("__BREADCRUMB__", breadcrumb)
+               .replace("__DATE__", _today()))
     store.write_text(index_rel, content)
 
     # Link the new cluster into the parent index.
@@ -186,12 +186,13 @@ def cmd_add_note(store: Storage, args) -> int:
 
     body = sys.stdin.read() if not sys.stdin.isatty() else ""
     tags = ", ".join(t.strip() for t in (args.tags or "").split(",") if t.strip())
+    tags_yaml = f"[{tags}]" if tags else "[]"
     tmpl = _read_template("note.md")
     content = (tmpl
-               .replace("{{TITLE}}", args.title)
-               .replace("{{DATE}}", _today())
-               .replace("{{TAGS}}", tags)
-               .replace("{{BODY}}", body.strip()))
+               .replace("__TITLE__", args.title)
+               .replace("__DATE__", _today())
+               .replace("__TAGS_YAML__", tags_yaml)
+               .replace("__BODY__", body.strip()))
     store.write_text(note_rel, content)
 
     index_rel = store._join(cluster, "index.md")

@@ -21,6 +21,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _die(msg: str) -> None:
@@ -30,13 +31,9 @@ def _die(msg: str) -> None:
 
 def brain_root() -> str:
     root = os.environ.get("BRAIN_ROOT", "").strip()
-    if not root:
-        _die(
-            "BRAIN_ROOT is not set. Point it at your brain, e.g.\n"
-            "  export BRAIN_ROOT=\"$HOME/second-brain\"      # local folder\n"
-            "  export BRAIN_ROOT=\"s3://my-bucket/brain\"     # S3"
-        )
-    return root
+    if root:
+        return root
+    return str(Path.home() / "second_brain")
 
 
 def get_storage(root: str | None = None) -> "Storage":
