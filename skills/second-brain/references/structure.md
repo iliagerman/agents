@@ -15,6 +15,10 @@ $BRAIN_ROOT/
       summer-2026-ukraine/
         index.md
         packing-list.md
+  attachments/                     # all note attachments, mirroring the note tree
+    personal/travel/summer-2026-ukraine/packing-list/
+      tickets.pdf
+      hotel.jpg
 ```
 
 - **Cluster** = a directory + an `index.md`. A directory without an `index.md` is
@@ -22,6 +26,12 @@ $BRAIN_ROOT/
 - **Note** = any `*.md` in a cluster other than `index.md`.
 - **Entry point** = the root `index.md`. Navigation always starts there and follows
   links down.
+- **Attachments** = images/documents stored with a note. They live under a single
+  `attachments/` folder at the brain root, mirroring the note's path
+  (`attachments/<cluster>/<note-slug>/<file>`). That folder has no `index.md`, so it
+  is invisible to `tree`/`check` navigation; the note body links to its files from an
+  `## Attachments` section. Manage them with `add-note --attach`, `attach`,
+  `get-attachments`, and `delete-note` — never by hand.
 
 ## `index.md` (the human-readable cluster map)
 

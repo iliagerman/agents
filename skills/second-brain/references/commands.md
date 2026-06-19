@@ -66,20 +66,46 @@ How writes split between tool and agent:
 - **Then:** usually `add-note` into it immediately; refine `--desc` for clarity;
   run `check`.
 
-## `add-note --cluster C --title T [--summary S] [--tags a,b]`  (body on **stdin**)
+## `add-note --cluster C --title T [--summary S] [--tags a,b] [--attach FILE …]`  (body on **stdin**)
 - **Purpose:** create a note in a cluster and link it in that cluster's `index.md`.
 - **When:** after the target cluster is decided (existing or just created).
 - **Preconditions:** the target cluster exists; placement confirmed (or asked).
 - **Body:** piped on stdin, e.g. `echo "..." | brain.py add-note --cluster … --title …`
   or a heredoc. `--summary` becomes the one-line description shown in the index.
+- **Attachments:** pass `--attach FILE` once per file (image, PDF, any document) the
+  user supplied with the note. Each file is copied under the brain-root
+  `attachments/<cluster>/<note-slug>/` folder and referenced from an
+  `## Attachments` section in the note body (inline `![]` for images, `[]` links
+  otherwise). If any `--attach` path doesn't exist the note is **not** created.
 - **Then:** `check` from the cluster up to root; curate the note body and its index
   summary for readability; confirm the breadcrumb path to the user.
 
+## `attach --note <path> --file FILE [--file FILE …]`
+- **Purpose:** add one or more images/documents to a note that already exists.
+- **When:** the user wants to add files to an existing note (rather than at creation).
+- **Preconditions:** the note exists (run `search`/`show` to find it); the source
+  files exist on disk.
+- **Args:** `--note` is the brain-relative note path; `--file` is repeatable.
+- **Effect:** copies the files under `attachments/<cluster>/<note-slug>/`, de-duplicates
+  names, and appends them to the note's `## Attachments` section.
+- **Then:** `check` (attachments don't affect index links, but stay in the habit).
+
+## `get-attachments <path> [--out DIR]`
+- **Purpose:** copy a note's stored attachments out to a directory so they can be
+  handed back to the user (e.g. delivered as files).
+- **When:** recalling/reviewing a note and the user wants the actual images/documents,
+  not just the note text.
+- **Args:** `path` is the brain-relative note path; `--out` is the destination dir
+  (defaults to the current working directory). Prints each copied file path.
+- **Read-only on the brain** — it never modifies notes.
+
 ## `delete-note <path>`
-- **Purpose:** delete a note and remove its link from the containing cluster index.
+- **Purpose:** delete a note, its attachments, and its link in the cluster index.
 - **When:** when the user asks to delete/remove a note from the second brain.
 - **Preconditions:** run `search` and usually `show` first so you delete the intended note.
 - **Args:** `path` is brain-relative, e.g. `travel/poland-slovakia-2026/car-rental-booking.md`.
+- **Effect:** removes the note file, removes its `attachments/<cluster>/<note-slug>/`
+  folder (and everything in it), and strips its link from the cluster index.
 - **Then:** run `check` from the affected cluster up to root until clean and confirm the deleted path.
 
 ## `check [path]`
@@ -96,11 +122,14 @@ How writes split between tool and agent:
 
 ## Standard sequences
 
-- **File a note:** `tree` → `search "<topic>"` → decide → *(ask if ambiguous)* →
-  `add-cluster` *(only if new)* → `add-note` → curate → `check` → fix → `check`
-  until `✓` → confirm path.
-- **Recall:** `search "<question>"` → `show` top hits → cited answer (or say it's a
-  gap).
-- **Delete a note:** `search "<description>"` → `show` likely match → `delete-note <path>` →
-  `check` until `✓` → confirm deletion.
+- **File a note (with files):** `tree` → `search "<topic>"` → decide →
+  *(ask if ambiguous)* → `add-cluster` *(only if new)* →
+  `add-note … --attach FILE` *(one per supplied file)* → curate → `check` → fix →
+  `check` until `✓` → confirm path.
+- **Add files to an existing note:** `search`/`show` to locate →
+  `attach --note <path> --file FILE …` → confirm.
+- **Recall (with files):** `search "<question>"` → `show` top hits → cited answer;
+  if the user wants the files, `get-attachments <path>` → deliver them.
+- **Delete a note:** `search "<description>"` → `show` likely match → `delete-note <path>`
+  (removes its attachments too) → `check` until `✓` → confirm deletion.
 - **Audit/reorganize:** `tree` → `check` → repair indexes → `check` until `✓`.

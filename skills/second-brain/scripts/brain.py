@@ -16,13 +16,25 @@ All <path> arguments are brain-relative (e.g. personal/travel/index.md).
 from __future__ import annotations
 
 import argparse
+import posixpath
 import re
 import sys
 from datetime import date
+from pathlib import Path
 
 from storage import Listing, Storage, brain_root, get_storage
 
 LINK_RE = re.compile(r"\]\(([^)]+)\)")
+
+# Image extensions get an inline ![] embed in the note; everything else a [] link.
+IMAGE_EXTS = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tif", ".tiff"}
+)
+
+# All note attachments live under a single folder at the brain root; inside it
+# they mirror the note's path so each note owns an isolated, collision-free
+# sub-folder (e.g. attachments/travel/poland-2026/hotel.jpg for travel/poland-2026.md).
+ATTACHMENTS_ROOT = "attachments"
 
 
 def _slug(text: str) -> str:
@@ -151,6 +163,83 @@ def _remove_link_to_target(text: str, target: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
+# attachments — files (images/docs) stored beside a note in <slug>.attachments/
+# --------------------------------------------------------------------------- #
+def _normalize_note_path(raw: str) -> str:
+    """Turn a user-supplied note path into a brain-relative `<…>.md` path."""
+    note_rel = raw.strip("/")
+    if not note_rel or note_rel.endswith("/") or note_rel.endswith("index.md"):
+        return ""
+    if not note_rel.endswith(".md"):
+        note_rel = f"{note_rel}.md"
+    return note_rel
+
+
+def _attachments_dir(note_rel: str) -> str:
+    """The note's attachment folder under the brain-root attachments tree.
+
+    Mirrors the note path: `travel/poland-2026.md` -> `attachments/travel/poland-2026`.
+    """
+    stem = note_rel[:-3] if note_rel.endswith(".md") else note_rel
+    return f"{ATTACHMENTS_ROOT}/{stem}"
+
+
+def _attachment_bullet(link: str, name: str) -> str:
+    """Render an attachment as an inline image embed or a plain link bullet."""
+    if Path(name).suffix.lower() in IMAGE_EXTS:
+        return f"- ![{name}]({link})"
+    return f"- [{name}]({link})"
+
+
+def _copy_attachments(store: Storage, note_rel: str, sources: list[str]) -> list[str]:
+    """Copy each source file into the note's attachments dir.
+
+    Validates every source up front (all-or-nothing), de-duplicates names within
+    the folder, and returns the markdown bullet lines to add to the note body.
+    Links are relative to the note's own location so they resolve in any viewer.
+    """
+    resolved: list[Path] = []
+    for src in sources:
+        p = Path(src).expanduser()
+        if not p.is_file():
+            print(f"attachment not found: {src}", file=sys.stderr)
+            return []
+        resolved.append(p)
+
+    adir = _attachments_dir(note_rel)
+    note_dir = note_rel.rpartition("/")[0]
+    bullets: list[str] = []
+    for p in resolved:
+        name = _dedupe_attachment_name(store, adir, Path(p.name).name)
+        att_rel = store._join(adir, name)
+        store.write_bytes(att_rel, p.read_bytes())
+        link = posixpath.relpath(att_rel, note_dir) if note_dir else att_rel
+        bullets.append(_attachment_bullet(link, name))
+    return bullets
+
+
+def _dedupe_attachment_name(store: Storage, adir: str, name: str) -> str:
+    """Return a name that does not collide with an existing attachment."""
+    if not store.exists(store._join(adir, name)):
+        return name
+    stem, suffix = Path(name).stem, Path(name).suffix
+    counter = 1
+    while True:
+        candidate = f"{stem}-{counter}{suffix}"
+        if not store.exists(store._join(adir, candidate)):
+            return candidate
+        counter += 1
+
+
+def _append_attachment_bullets(store: Storage, note_rel: str, bullets: list[str]) -> None:
+    """Add attachment bullets under the note's `## Attachments` heading."""
+    text = store.read_text(note_rel)
+    for bullet in bullets:
+        text = _append_under_heading(text, "Attachments", bullet)
+    store.write_text(note_rel, text)
+
+
+# --------------------------------------------------------------------------- #
 # add-cluster / add-note / delete-note
 # --------------------------------------------------------------------------- #
 def cmd_add_cluster(store: Storage, args) -> int:
@@ -195,6 +284,14 @@ def cmd_add_note(store: Storage, args) -> int:
         print(f"note already exists: {note_rel}", file=sys.stderr)
         return 1
 
+    # Validate attachment sources before creating the note so a bad path never
+    # leaves an orphaned note behind.
+    missing = [s for s in (args.attach or []) if not Path(s).expanduser().is_file()]
+    if missing:
+        for src in missing:
+            print(f"attachment not found: {src}", file=sys.stderr)
+        return 1
+
     body = sys.stdin.read() if not sys.stdin.isatty() else ""
     tags = ", ".join(t.strip() for t in (args.tags or "").split(",") if t.strip())
     tags_yaml = f"[{tags}]" if tags else "[]"
@@ -213,20 +310,65 @@ def cmd_add_note(store: Storage, args) -> int:
         link = f"- [{args.title}]({slug}.md){suffix}"
         store.write_text(index_rel, _append_under_heading(itext, "Notes", link))
 
-    print(f"created note {note_rel}")
+    attachments = args.attach or []
+    if attachments:
+        bullets = _copy_attachments(store, note_rel, attachments)
+        if not bullets:
+            return 1
+        _append_attachment_bullets(store, note_rel, bullets)
+
+    print(f"created note {note_rel}" + (f" (+{len(attachments)} attachment(s))" if attachments else ""))
+    return 0
+
+
+def cmd_attach(store: Storage, args) -> int:
+    note_rel = _normalize_note_path(args.note)
+    if not note_rel:
+        print("attach requires a brain-relative note path, not a cluster index", file=sys.stderr)
+        return 1
+    if not store.exists(note_rel):
+        print(f"note not found: {note_rel}", file=sys.stderr)
+        return 1
+
+    bullets = _copy_attachments(store, note_rel, args.file)
+    if not bullets:
+        return 1
+    _append_attachment_bullets(store, note_rel, bullets)
+    print(f"attached {len(bullets)} file(s) to {note_rel}")
+    return 0
+
+
+def cmd_get_attachments(store: Storage, args) -> int:
+    note_rel = _normalize_note_path(args.path)
+    if not note_rel:
+        print("get-attachments requires a brain-relative note path", file=sys.stderr)
+        return 1
+    if not store.exists(note_rel):
+        print(f"note not found: {note_rel}", file=sys.stderr)
+        return 1
+
+    adir = _attachments_dir(note_rel)
+    names = store.list_files(adir)
+    if not names:
+        print(f"no attachments for {note_rel}")
+        return 0
+
+    out_dir = Path(args.out).expanduser()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (out_dir / name).write_bytes(store.read_bytes(store._join(adir, name)))
+        print(str((out_dir / name).resolve()))
     return 0
 
 
 def cmd_delete_note(store: Storage, args) -> int:
-    note_rel = args.path.strip("/")
-    if not note_rel or note_rel.endswith("/") or note_rel.endswith("index.md"):
+    note_rel = _normalize_note_path(args.path)
+    if not note_rel:
         print(
             "delete-note requires a brain-relative note path, not a cluster index",
             file=sys.stderr,
         )
         return 1
-    if not note_rel.endswith(".md"):
-        note_rel = f"{note_rel}.md"
     if not store.exists(note_rel):
         print(f"note not found: {note_rel}", file=sys.stderr)
         return 1
@@ -238,6 +380,7 @@ def cmd_delete_note(store: Storage, args) -> int:
         store.write_text(index_rel, _remove_link_to_target(index_text, filename))
 
     store.delete(note_rel)
+    store.delete_prefix(_attachments_dir(note_rel))
     print(f"deleted note {note_rel}")
     return 0
 
@@ -307,6 +450,23 @@ def main() -> int:
     p_an.add_argument("--title", required=True)
     p_an.add_argument("--summary", default="", help="one-line summary for the index")
     p_an.add_argument("--tags", default="", help="comma-separated")
+    p_an.add_argument(
+        "--attach", action="append", metavar="FILE",
+        help="path to a file (image/doc) to store with the note; repeatable",
+    )
+
+    p_at = sub.add_parser("attach", help="add attachments to an existing note")
+    p_at.add_argument("--note", required=True, help="brain-relative note path")
+    p_at.add_argument(
+        "--file", action="append", required=True, metavar="FILE",
+        help="path to a file (image/doc) to attach; repeatable",
+    )
+
+    p_ga = sub.add_parser(
+        "get-attachments", help="copy a note's attachments out to a directory"
+    )
+    p_ga.add_argument("path", help="brain-relative note path")
+    p_ga.add_argument("--out", default=".", help="destination directory (default: cwd)")
 
     p_dn = sub.add_parser("delete-note", help="delete a note + remove its index link")
     p_dn.add_argument("path", help="brain-relative note path")
@@ -320,6 +480,7 @@ def main() -> int:
         "init": cmd_init,
         "tree": cmd_tree, "show": cmd_show, "search": cmd_search,
         "add-cluster": cmd_add_cluster, "add-note": cmd_add_note,
+        "attach": cmd_attach, "get-attachments": cmd_get_attachments,
         "delete-note": cmd_delete_note, "check": cmd_check,
     }
     return dispatch[args.cmd](store, args)

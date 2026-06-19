@@ -47,9 +47,19 @@ Full conventions: `references/structure.md`. The placement decision rules:
 | `show <path>` | read a cluster index or note | to inspect a cluster's scope before placing |
 | `search <q> [--top N]` | fuzzy-find notes (typo/phrase tolerant) | to **recall**, and **before adding** (dedupe + find home) |
 | `add-cluster --parent P --name SLUG --title T --desc D` | create a cluster + link it in its parent | **only** when placement says "new cluster" |
-| `add-note --cluster C --title T [--summary S] [--tags a,b]` (body on stdin) | create a note + link it in the cluster | after the target cluster is decided |
-| `delete-note <path>` | delete a note + remove its index link | when the user asks to remove/delete a note |
+| `add-note --cluster C --title T [--summary S] [--tags a,b] [--attach FILE …]` (body on stdin) | create a note + link it in the cluster (and store any attached images/docs) | after the target cluster is decided |
+| `attach --note <path> --file FILE [--file FILE …]` | add images/documents to an **existing** note | when the user adds files to a note they already have |
+| `get-attachments <path> [--out DIR]` | copy a note's attachments out to a directory (default cwd) | to **retrieve/show** a note's images/docs back to the user |
+| `delete-note <path>` | delete a note, its attachments, and its index link | when the user asks to remove/delete a note |
 | `check [path]` | report `index.md` drift vs real files | **after every change**, until clean |
+
+> **Attachments** (images, PDFs, any document) live under a single `attachments/`
+> folder at the brain root, mirroring each note's path
+> (`attachments/<cluster>/<note-slug>/<file>`). The note body gets an `## Attachments`
+> section with an inline `![](…)` embed for images and a `[](…)` link for other
+> files. Use `--attach`/`attach` to add them, `get-attachments` to hand them back,
+> and `delete-note` removes a note's attachment folder automatically. Attachment
+> source paths are ordinary filesystem paths (e.g. a file the user just uploaded).
 
 > **Hard rule:** never create/edit files under `BRAIN_ROOT` with raw Write/Edit
 > when a `brain.py` command exists — the commands keep `index.md` links correct.
@@ -74,7 +84,10 @@ Full conventions: `references/structure.md`. The placement decision rules:
    locations plus a "new cluster" option. Example: *"Is this about your Ukraine trip
    (Personal → Travel → Summer 2026 Ukraine), work travel, or a new subject?"*
    Proceed only after they pick.
-6. **Write:** `add-cluster` (only if creating one), then `add-note`.
+6. **Write:** `add-cluster` (only if creating one), then `add-note`. If the user
+   supplied images or documents with the note, pass each one as `--attach FILE`
+   (repeat per file) so they are stored with the note. To add files to a note
+   that already exists, use `attach --note <path> --file FILE`.
 7. **Re-evaluate indexes (mandatory):** run `check` from the touched path up to the
    root; fix every reported index (keep prose human-readable); re-run until clean.
 8. **Confirm** the final breadcrumb path to the user.
@@ -83,10 +96,13 @@ Full conventions: `references/structure.md`. The placement decision rules:
 
 `search "<question>"` → `show` the top hits → answer **citing** the notes by path.
 If nothing relevant comes back, say so — it's a gap to fill, not a reason to guess.
+If a recalled note has an `## Attachments` section and the user wants the files
+back (not just the text), run `get-attachments <note-path>` to copy them out for
+delivery.
 
 ## Deleting a note — the workflow
 
-`search "<description of note>"` → `show` the matching note to confirm → `delete-note <path>` → `check` from the affected cluster up to root until clean → confirm the deleted path.
+`search "<description of note>"` → `show` the matching note to confirm → `delete-note <path>` → `check` from the affected cluster up to root until clean → confirm the deleted path. `delete-note` also removes the note's `attachments/` sub-folder, so any stored images/documents go with it.
 
 ## Setup
 

@@ -18,7 +18,9 @@ Optional for S3 (custom endpoints — s3-compatible stores, LocalStack, etc.):
 
 from __future__ import annotations
 
+import mimetypes
 import os
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +64,14 @@ class Storage:
     def delete(self, rel: str) -> None: raise NotImplementedError
     def list_dir(self, rel: str = "") -> Listing: raise NotImplementedError
     def walk_md(self) -> list[str]: raise NotImplementedError  # all .md, brain-relative
+
+    # Binary / attachment access — for note attachments (images, PDFs, …).
+    def read_bytes(self, rel: str) -> bytes: raise NotImplementedError
+    def write_bytes(self, rel: str, data: bytes) -> None: raise NotImplementedError
+    def list_files(self, rel: str) -> list[str]:  # immediate file names in a dir
+        raise NotImplementedError
+    def delete_prefix(self, rel: str) -> None:  # delete a folder + everything in it
+        raise NotImplementedError
 
     # Shared helpers ---------------------------------------------------------
     @staticmethod
@@ -128,6 +138,25 @@ class LocalStorage(Storage):
         for p in sorted(self.root.rglob("*.md")):
             out.append(p.relative_to(self.root).as_posix())
         return out
+
+    def read_bytes(self, rel: str) -> bytes:
+        return self._abs(rel).read_bytes()
+
+    def write_bytes(self, rel: str, data: bytes) -> None:
+        p = self._abs(rel)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+
+    def list_files(self, rel: str) -> list[str]:
+        base = self._abs(rel) if rel else self.root
+        if not base.is_dir():
+            return []
+        return sorted(c.name for c in base.iterdir() if c.is_file())
+
+    def delete_prefix(self, rel: str) -> None:
+        p = self._abs(rel)
+        if p.is_dir():
+            shutil.rmtree(p)
 
 
 # --------------------------------------------------------------------------- #
@@ -212,6 +241,44 @@ class S3Storage(Storage):
                 if obj["Key"].endswith(".md"):
                     out.append(self._rel(obj["Key"]))
         return sorted(out)
+
+    def read_bytes(self, rel: str) -> bytes:
+        obj = self._s3.get_object(Bucket=self.bucket, Key=self._key(rel))
+        return obj["Body"].read()
+
+    def write_bytes(self, rel: str, data: bytes) -> None:
+        content_type = mimetypes.guess_type(rel)[0] or "application/octet-stream"
+        self._s3.put_object(
+            Bucket=self.bucket, Key=self._key(rel),
+            Body=data, ContentType=content_type,
+        )
+
+    def list_files(self, rel: str) -> list[str]:
+        prefix = self._key(rel)
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+        names: list[str] = []
+        paginator = self._s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix, Delimiter="/"):
+            for obj in page.get("Contents", []):
+                name = obj["Key"][len(prefix):]
+                if name and "/" not in name:
+                    names.append(name)
+        return sorted(names)
+
+    def delete_prefix(self, rel: str) -> None:
+        prefix = self._key(rel)
+        if prefix and not prefix.endswith("/"):
+            prefix += "/"
+        to_delete: list[dict[str, str]] = []
+        paginator = self._s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                to_delete.append({"Key": obj["Key"]})
+        for i in range(0, len(to_delete), 1000):
+            self._s3.delete_objects(
+                Bucket=self.bucket, Delete={"Objects": to_delete[i:i + 1000]}
+            )
 
 
 if __name__ == "__main__":
