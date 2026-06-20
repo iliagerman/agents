@@ -1,0 +1,37 @@
+# Template: single-service compose for the homeserver.
+# Replace __SERVICE__, __CONTAINER__, __IMAGE__, __PORT__, __VOLUME__.
+# `system_default` is the external docker network owned by Nginx Proxy Manager.
+
+services:
+  __SERVICE__:
+    image: __IMAGE__
+    container_name: __CONTAINER__
+    restart: unless-stopped
+    env_file:
+      - ./deployments/homeserver/env.homeserver
+    environment:
+      # Inline only what you want to lock down regardless of env.homeserver.
+      HOST: 0.0.0.0
+      PORT: "__PORT__"
+    volumes:
+      - __VOLUME__:/data
+    # No host port mapping — NPM reaches __CONTAINER__:__PORT__ via system_default.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:__PORT__/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - __SERVICE__-network
+      - system_default
+
+networks:
+  __SERVICE__-network:
+    driver: bridge
+  system_default:
+    external: true
+
+volumes:
+  __VOLUME__:
+    driver: local
