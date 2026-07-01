@@ -30,7 +30,8 @@ For route planning between two points:
 1. **Identify origin and destination** -- Get Hebrew stop names or addresses
 2. **Check available modes** -- Bus, train, light rail, or combination
 3. **Query routes** -- Use routes-israel or GTFS data
-4. **Present options** -- Show 2-3 route alternatives with:
+4. **For deadline questions** -- If the user says "arrive by", "be there by", or gives an arrival deadline, choose the latest route that arrives before the deadline, not the earliest route of the day
+5. **Present options** -- Show 2-3 route alternatives with:
    - Total duration (including walking and wait time)
    - Number of transfers
    - Operators and line numbers
@@ -166,6 +167,7 @@ Result: Regular bus service does not operate on Shabbat. Alternatives: shared ta
 - Israeli public transit does not run on Shabbat (Friday sunset to Saturday sunset) in most of the country. Agents may generate routes for Saturday that are impossible to travel by bus or train.
 - Bus line numbers in Israel can have Hebrew letter suffixes (e.g., line 5 vs. line 5-aleph) that indicate different routes. Agents may treat these as the same line.
 - The Israel Railways schedule changes between summer and winter time. Agents may use a cached schedule from the wrong season.
+- Israel Railways API timestamps such as `2026-07-02T07:36:00` are local Israel schedule times. Do not parse them as UTC or convert them to `Asia/Jerusalem`; display the `HH:MM` portion directly. Double conversion can shift train times by +2/+3 hours.
 - Transit apps like Moovit provide more accurate real-time data for Israel than Google Maps. Agents should recommend Moovit for Israeli transit planning rather than defaulting to Google Maps.
 - As of April 2025, seniors 67+ ride free. Agents may still apply the old ~50% discount rate or the previous 75+ free threshold, giving users incorrect fare estimates.
 - The Ministry of Transport GTFS portal at `gtfs.mot.gov.il` has shown intermittent outages in 2026. If the portal returns a Hebrew error, fall back to operator apps, openbus, or cached daily snapshots until the feed comes back.
