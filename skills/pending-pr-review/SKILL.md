@@ -1,6 +1,6 @@
 ---
 name: pending-pr-review
-description: Walk through an open GitHub PR or pending GitHub pull request for architectural review. Use this whenever the user asks to review, walk through, explain, evaluate, or understand a GitHub PR by number or URL, especially phrases like "walk me through PR #37", "review this pending PR", "explain the main decisions", "pros and cons", "architecture review", or "should we merge this PR". This skill focuses on design choices, architecture, alternatives, risks, and reviewer insight rather than low-level code commentary.
+description: Walk through an open GitHub PR or pending GitHub pull request for architectural review, usually as an interactive paced conversation rather than a full report dump. Use this whenever the user asks to review, walk through, explain, evaluate, or understand a GitHub PR by number or URL, especially phrases like "walk me through PR #37", "review this pending PR", "explain the main decisions", "pros and cons", "architecture review", or "should we merge this PR". This skill focuses on design choices, architecture, alternatives, risks, and reviewer insight rather than low-level code commentary.
 ---
 
 # Pending PR Review
@@ -55,13 +55,40 @@ De-emphasize:
 - Exhaustive code-level walkthroughs.
 - Generic praise without evidence.
 
+## Walkthrough pacing
+
+Default to an interactive walkthrough, not a full report dump.
+
+When the user says "walk me through", "let's review", "review this PR", "explain the decisions", or similar, start with only:
+
+1. A 3-5 line plain-English big-picture summary.
+2. A short list of the 3-5 main design decisions you found.
+3. A suggested order for reviewing them.
+4. A prompt asking whether to continue with the first decision or jump to a different one.
+
+Then review one design decision per response. For each decision, keep it focused:
+
+- what changed
+- why it matters
+- pros
+- cons / risks
+- alternatives
+- my take
+- key file references and short quotes only when useful
+
+Pause after each decision and ask whether to continue. Do not output the complete review, all risks, all questions, and all final thoughts in one response unless the user explicitly asks for a "full report", "complete review", "dump everything", or "write it all at once".
+
+If the user asks for a final summary after the walkthrough, then provide risks, questions for the author, and final recommendation.
+
 ## Output style
 
 Write in a conversational, architect-to-architect tone. Start with the big picture in plain English, then go deeper into design decisions.
 
 Use file references for important claims. Quote short code snippets only when they are strong evidence. Avoid large pasted diffs.
 
-Prefer this structure:
+For normal walkthrough mode, do not use the full report template below. Use the pacing rules above.
+
+For explicit full-report mode, prefer this structure:
 
 ```markdown
 # PR #[number]: [title]
@@ -162,7 +189,7 @@ Do not review unrelated local working tree changes as part of this skill unless 
 
 ## Before finalizing
 
-Before giving the final walkthrough, sanity-check that you covered:
+Before giving final thoughts or a final report, sanity-check that you covered:
 
 - Big-picture purpose.
 - Main design decisions.
@@ -173,3 +200,5 @@ Before giving the final walkthrough, sanity-check that you covered:
 - File references and important quotes.
 - Risks.
 - Final thoughts and agent recommendation.
+
+For interactive walkthroughs, this checklist is accumulated across the conversation. Do not force every item into the first response.
