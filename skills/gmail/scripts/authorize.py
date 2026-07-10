@@ -8,13 +8,16 @@ OAuth consent for BOTH the gmail and calendar skills and prints an
 into the GOOGLE_CREDENTIALS_JSON env var on your home server — the skills then
 run fully headless, refreshing access tokens on their own.
 
-Prerequisite: an OAuth *client* secrets JSON of type "Desktop app", downloaded
-from Google Cloud Console (APIs & Services -> Credentials). Pass it with
---client <path>, --client-json '<json>', or pipe it via --client -.
+Prerequisite: either an OAuth *client* secrets JSON of type "Desktop app"
+(downloaded from Google Cloud Console), or an existing authorized_user JSON in
+GOOGLE_CREDENTIALS_JSON. Pass the client with --client <path>, --client-json
+'<json>', pipe it via --client -, or use --from-env to derive the OAuth client
+from the current credential.
 
 Examples:
     python3 authorize.py --client client.json
     python3 authorize.py --client client.json --no-browser   # print URL to open
+    python3 authorize.py --from-env --manual                  # refresh expired env credential
     cat client.json | python3 authorize.py --client -
     python3 authorize.py --client-json "$(cat client.json)"
 
@@ -26,10 +29,40 @@ import json
 import os
 import sys
 
-from google_client import ALL_SCOPES
+from google_client import ALL_SCOPES, ENV_VAR
+
+
+def _raw_env_credential() -> str:
+    val = os.environ.get(ENV_VAR, "").strip()
+    if not val:
+        raise SystemExit(f"{ENV_VAR} is not set")
+    if val.startswith("{"):
+        return val
+    with open(val, "r", encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _client_config_from_authorized_user(raw: str) -> dict:
+    info = json.loads(raw)
+    client_id = info.get("client_id")
+    client_secret = info.get("client_secret")
+    if not client_id or not client_secret:
+        raise SystemExit(f"{ENV_VAR} must contain authorized_user JSON with client_id and client_secret")
+    return {
+        "installed": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "redirect_uris": ["http://localhost"],
+        }
+    }
 
 
 def _read_client(args) -> str:
+    if args.from_env:
+        return json.dumps(_client_config_from_authorized_user(_raw_env_credential()))
     if args.client_json:
         return args.client_json
     if args.client == "-":
@@ -99,6 +132,7 @@ def _print_credential(creds) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate an authorized_user credential for the Google skills.")
     ap.add_argument("--client", help="Path to OAuth client secrets JSON, or '-' for stdin")
+    ap.add_argument("--from-env", action="store_true", help="Derive OAuth client_id/client_secret from GOOGLE_CREDENTIALS_JSON")
     ap.add_argument("--client-json", help="OAuth client secrets JSON passed inline as a string")
     ap.add_argument("--no-browser", action="store_true", help="Do not open a browser; print the URL to visit instead")
     ap.add_argument("--port", type=int, default=0, help="Local redirect server port (default: random free port)")
@@ -113,8 +147,8 @@ def main() -> None:
         _run_manual_finish(args.manual_finish)
         return
 
-    if not args.client and not args.client_json:
-        ap.error("provide --client <path|-> or --client-json '<json>'")
+    if not args.from_env and not args.client and not args.client_json:
+        ap.error("provide --client <path|->, --client-json '<json>', or --from-env")
 
     config = json.loads(_read_client(args))
 

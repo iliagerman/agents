@@ -132,6 +132,6 @@ The skills auto-detect the `service_account` type and impersonate that subject.
 |---------|-------------|
 | `GOOGLE_CREDENTIALS_JSON is not set` | Export the env var (option A step 5 / B step 3). |
 | `holds raw OAuth *client* secrets` | You put `client.json` in the env var. The env var needs the **output of authorize.py**, not the client secret. |
-| `Failed to obtain an access token … refresh token … revoked` | The refresh token expired/was revoked. Re-run `authorize.py` and update the env var. Publishing the OAuth app, or leaving it in "Testing", both keep test-user tokens valid; deleting the test user revokes them. |
+| `Failed to obtain an access token … refresh token … revoked` | The refresh token expired/was revoked. In an agent run, use `python3 scripts/authorize.py --from-env --manual`, ask the user to open the URL and paste the final redirect URL, exchange it with `python3 scripts/authorize.py --manual-finish '<url>' > /tmp/google-credential.json`, then persist it with `python3 scripts/save_credentials.py --credential-file /tmp/google-credential.json`. Publishing the OAuth app, or leaving it in "Testing", both keep test-user tokens valid; deleting the test user revokes them. |
 | `unrecognized shape` | The JSON isn't an `authorized_user` or `service_account` credential. Re-run `authorize.py`. |
 | `access_denied` during consent | Add your email under **Test users** on the OAuth consent screen. |

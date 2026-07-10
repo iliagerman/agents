@@ -17,10 +17,12 @@ Headless Google Calendar access via the official Google API client. Every
 command is `python3 scripts/gcal.py [--calendar ID] <subcommand> [flags]` and
 prints JSON to stdout.
 
-Authentication is non-interactive: the skill reads a ready-to-use credential
-from `GOOGLE_CREDENTIALS_JSON` and refreshes access tokens itself. The agent
-never logs in. If that env var is missing or holds the wrong kind of JSON, the
-scripts exit with an explanation — see **Authentication** below.
+Authentication is non-interactive during normal use: the skill reads a
+ready-to-use credential from `GOOGLE_CREDENTIALS_JSON` and refreshes access
+tokens itself. If Google reports that the refresh token was expired or revoked,
+you can drive the re-authorization flow with the user: generate an auth link,
+ask the user to open it and paste the final redirect URL, then save the new
+credential with `scripts/save_credentials.py`.
 
 > The CLI script is `gcal.py` (NOT `calendar.py` — that name would shadow
 > Python's stdlib `calendar` module and break imports).
@@ -111,3 +113,29 @@ python3 scripts/authorize.py --client client.json   # prints authorized_user JSO
 Then on the home server set `GOOGLE_CREDENTIALS_JSON` to that JSON. The scripts
 also accept a service-account key (set `GOOGLE_DELEGATED_SUBJECT` for Workspace
 domain-wide delegation).
+
+### Refresh expired/revoked credentials from chat
+
+If a calendar command fails with `invalid_grant: Token has been expired or revoked`,
+do not stop at the error. Run the manual OAuth flow yourself and guide the user:
+
+```bash
+# 1. Create the Google consent URL from the current expired credential.
+python3 scripts/authorize.py --from-env --manual
+
+# 2. Ask the user to open the printed URL, approve access, and paste the full
+#    final localhost redirect URL from their browser address bar.
+
+# 3. Exchange the pasted URL for a new authorized_user credential.
+python3 scripts/authorize.py --manual-finish '<pasted redirect URL>' > /tmp/google-credential.json
+
+# 4. Persist it to the current user's gmail and calendar skill credentials.
+python3 scripts/save_credentials.py --credential-file /tmp/google-credential.json
+
+# 5. Verify.
+python3 scripts/gcal.py calendars
+```
+
+Never print the refreshed credential JSON back to the user. Store it via
+`save_credentials.py`, then delete any temporary credential file if you created
+one.
