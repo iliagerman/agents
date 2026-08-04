@@ -1,31 +1,49 @@
 ---
 name: pi-code-review
-description: Launch an independent code review from Claude Code by running pi non-interactively with `openai-codex/gpt-5.6-sol`. Use whenever the user asks Claude to have pi, GPT-5.6 Sol, or a second AI reviewer review local code, working-tree changes, staged changes, a commit, or a branch before commit, push, or merge.
+description: Launch an independent, fully unattended code review from Claude Code by running pi with `openai-codex/gpt-5.6-sol` and showing progress while it works. Use whenever the user asks Claude to have pi, GPT-5.6 Sol, or a second AI reviewer review local code, working-tree changes, staged changes, a commit, or a branch before commit, push, or merge.
 compatibility: Requires `pi` on PATH and authentication for `openai-codex/gpt-5.6-sol`.
 ---
 
 # Pi Code Review
 
-Delegate the review to pi. Run it from the repository root so pi can inspect the project rules, changed files, and surrounding code.
+Delegate the review to pi. Run the bundled script from the repository root so pi can inspect project rules, changed files, and surrounding code.
 
 ## Run the review
 
-Use this command through Claude Code's Bash tool:
+Resolve `scripts/review.sh` relative to this `SKILL.md`, then run it through Claude Code's Bash tool. Do not ask for confirmation:
 
 ```bash
-pi -p --no-session \
-  --model openai-codex/gpt-5.6-sol \
-  --tools read,bash \
-  "Review the code changes in this repository. Determine the requested scope from my request; when no scope was specified, review staged and unstaged changes, or the current branch against its default base branch when the working tree is clean. Read applicable project instructions and inspect changed files in context. Do not modify files. Focus on correctness, security, regressions, performance, maintainability, and missing tests. Report only actionable findings, ordered by severity, with exact file paths and line numbers. For each finding explain the impact and the smallest sound fix. If no findings exist, say so explicitly."
+bash "/absolute/path/to/pi-code-review/scripts/review.sh"
 ```
 
-`-p` makes pi return one review and exit. `--no-session` avoids creating review session history. `--tools read,bash` removes pi's direct file-editing tools while retaining git inspection; the prompt explicitly forbids modification because shell access itself cannot be made read-only.
+Pass a user-requested scope as one quoted argument:
 
-If the user names a specific scope, append it to the quoted prompt. Examples:
+```bash
+bash "/absolute/path/to/pi-code-review/scripts/review.sh" \
+  "Review the current branch against origin/main."
+```
 
-- `Review commit abc123 only.`
-- `Review the current branch against origin/main.`
-- `Review staged changes only.`
-- `Review src/auth.ts, focusing on authorization.`
+The script is fully unattended. It:
 
-Do not substitute Claude's own review for pi's output. Return pi's review to the user, preserving file paths, line numbers, severity, and technical details. If the command fails, report the exact error and stop; do not silently use another model.
+- uses pi print mode and disables session persistence
+- selects `openai-codex/gpt-5.6-sol` exactly
+- approves project-local context without prompting
+- removes pi's direct edit/write tools
+- emits a start message and a heartbeat every 15 seconds
+- exits with pi's status and prints pi's complete review
+
+Shell access remains available so pi can inspect git. The review prompt forbids file modification.
+
+When no scope is supplied, review staged and unstaged changes. If the working tree is clean, compare the current branch with its default base branch.
+
+Return progress output while the command runs. After completion, return pi's review without substituting Claude's own review. Preserve file paths, line numbers, severity, and technical details. If pi fails, report its exact output and exit status; never retry with another model.
+
+## Fully unattended installation
+
+Run installation outside `$HOME` so npm does not prepend `$HOME/node_modules/.bin`. This machine has a `node@21.6.2` executable there that shadows the active Node 22 binary inside `npx` commands.
+
+```bash
+cd /tmp && npx --yes skills add \
+  https://github.com/iliagerman/agents/tree/main/skills/pi-code-review \
+  --global --agent claude-code --skill pi-code-review --yes
+```
