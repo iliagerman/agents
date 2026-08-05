@@ -5,6 +5,24 @@ description: Interacts with live Hunk diff review sessions via CLI. Inspects rev
 
 # Hunk Review
 
+## Installation prerequisite
+
+This skill is installed with the `skills` CLI, which requires Node.js 22 or newer. Before running `npx skills add`, verify:
+
+```bash
+node --version
+```
+
+If it is older than 22, switch to a current Node 22+ runtime first (for example, with fnm):
+
+```bash
+fnm install 22
+fnm use 22
+npx skills add https://github.com/iliagerman/agents/tree/main/skills/hunk
+```
+
+`node:util` errors mentioning `styleText` are a Node runtime incompatibility, not a problem with Hunk or this skill's files.
+
 Hunk is an interactive terminal diff viewer. The TUI is for the user -- do NOT run `hunk diff`, `hunk show`, or other interactive commands directly. Use `hunk session *` CLI commands to inspect and control live sessions through the local daemon.
 
 If no session exists, ask the user to launch Hunk in their terminal first.
