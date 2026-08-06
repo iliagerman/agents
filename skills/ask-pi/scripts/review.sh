@@ -12,8 +12,9 @@ trap cleanup EXIT INT TERM
 
 prompt="Review the code changes in this repository. Scope: $scope Read applicable project instructions and inspect changed files in context. Do not modify files. Focus on correctness, security, regressions, performance, maintainability, and missing tests. Report only actionable findings, ordered by severity, with exact file paths and line numbers. For each finding explain the impact and the smallest sound fix. If no findings exist, say so explicitly."
 
-pi -p --no-session --approve \
+pi -p --no-session --no-extensions --offline --approve \
   --model openai-codex/gpt-5.6-sol \
+  --thinking max \
   --tools read,bash \
   "$prompt" >"$output" 2>&1 &
 pid=$!
@@ -22,7 +23,16 @@ printf 'Pi review started (PID %s).\n' "$pid"
 started=$SECONDS
 while kill -0 "$pid" 2>/dev/null; do
   sleep 15
-  kill -0 "$pid" 2>/dev/null && printf 'Pi review running: %ss elapsed.\n' "$((SECONDS - started))"
+  elapsed=$((SECONDS - started))
+  if ((elapsed >= 900)); then
+    kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    pid=
+    cat "$output" >&2
+    printf 'Pi review timed out after 900s.\n' >&2
+    exit 124
+  fi
+  kill -0 "$pid" 2>/dev/null && printf 'Pi review running: %ss elapsed.\n' "$elapsed"
 done
 
 if wait "$pid"; then
