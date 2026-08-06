@@ -11,7 +11,7 @@ Use this skill when the user wants to ask pi a question from the command line wi
 The important part is to run pi in **print mode** so it answers once and exits:
 
 ```bash
-pi -p --no-session --model openai-codex/gpt-5.6-sol "<question>"
+pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max "<question>"
 ```
 
 ## Default behavior
@@ -22,27 +22,28 @@ When helping with this workflow:
 2. Use `-p` / `--print` so pi writes the answer to stdout and exits.
 3. Use `--no-session` for automation unless the user explicitly wants session history.
 4. Always pass `--model openai-codex/gpt-5.6-sol`. Do NOT use `github-copilot/*` — that provider has no API key configured and the command fails with "No API key found for github-copilot."
-5. Give the user a copy-paste-ready command, not an interactive workflow.
+5. Always pass `--thinking max` so the review uses maximum reasoning effort.
+6. Give the user a copy-paste-ready command, not an interactive workflow.
 
 ## Ready-to-use commands
 
 ### Ask one question
 
 ```bash
-pi -p --no-session --model openai-codex/gpt-5.6-sol "What ports are listening on this machine?"
+pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max "What ports are listening on this machine?"
 ```
 
 ### Pass the question from a shell variable
 
 ```bash
 QUESTION="Summarize the changes in this repository"
-pi -p --no-session --model openai-codex/gpt-5.6-sol "$QUESTION"
+pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max "$QUESTION"
 ```
 
 ### Save the answer into a shell variable
 
 ```bash
-ANSWER=$(pi -p --no-session --model openai-codex/gpt-5.6-sol "Write a conventional commit message for the current git diff")
+ANSWER=$(pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max "Write a conventional commit message for the current git diff")
 printf '%s\n' "$ANSWER"
 ```
 
@@ -51,13 +52,13 @@ printf '%s\n' "$ANSWER"
 Pi merges piped stdin into the prompt in print mode, which is useful for unattended scripting.
 
 ```bash
-git diff --stat | pi -p --no-session --model openai-codex/gpt-5.6-sol "Summarize this diff briefly"
+git diff --stat | pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max "Summarize this diff briefly"
 ```
 
 ### Read from a file and ask a question
 
 ```bash
-pi -p --no-session --model openai-codex/gpt-5.6-sol @README.md "Summarize the main setup steps"
+pi -p --no-session --model openai-codex/gpt-5.6-sol --thinking max @README.md "Summarize the main setup steps"
 ```
 
 ## Authentication note
