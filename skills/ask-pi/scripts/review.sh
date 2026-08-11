@@ -2,6 +2,11 @@
 set -uo pipefail
 
 scope=${*:-Review staged and unstaged changes; if the working tree is clean, review the current branch against its default base branch.}
+thinking=${PI_REVIEW_THINKING:-high}
+case "$thinking" in
+  off|minimal|low|medium|high|xhigh|max) ;;
+  *) printf 'Invalid PI_REVIEW_THINKING: %s\n' "$thinking" >&2; exit 2 ;;
+esac
 output=$(mktemp)
 pid=
 cleanup() {
@@ -14,7 +19,7 @@ prompt="Review the code changes in this repository. Scope: $scope Read applicabl
 
 pi -p --no-session --no-extensions --offline --approve \
   --model openai-codex/gpt-5.6-sol \
-  --thinking max \
+  --thinking "$thinking" \
   --tools read,bash \
   "$prompt" >"$output" 2>&1 &
 pid=$!

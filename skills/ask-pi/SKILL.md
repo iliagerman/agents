@@ -22,7 +22,7 @@ pi -p --no-session --no-extensions --offline --model openai-codex/gpt-5.6-sol "<
 4. Use `--no-extensions` so configured extensions and MCP children cannot block startup.
 5. Use `--offline` to skip startup update checks, package checks, and telemetry.
 6. Always pass `--model openai-codex/gpt-5.6-sol`. Do not use `github-copilot/*`; it fails with `No API key found for github-copilot.`
-7. Do not set a thinking level for ordinary questions. Use `--thinking max` only for delegated code reviews.
+7. Do not set a thinking level for ordinary questions. Delegated code reviews default to `high`; change it only when the user explicitly requests another level.
 8. Give the user a copy-paste-ready command, not an interactive workflow.
 
 ## Independent code review
@@ -40,11 +40,20 @@ bash "/absolute/path/to/ask-pi/scripts/review.sh" \
   "Review the current branch against origin/main."
 ```
 
+Reviews use `high` thinking by default. If the user explicitly requests another level, set `PI_REVIEW_THINKING` for that invocation:
+
+```bash
+PI_REVIEW_THINKING=max bash "/absolute/path/to/ask-pi/scripts/review.sh" \
+  "Review the current branch against origin/main."
+```
+
+Allowed values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+
 The script:
 
 - uses print mode without session persistence
 - disables extensions and startup network operations
-- selects `openai-codex/gpt-5.6-sol` with `--thinking max`
+- selects `openai-codex/gpt-5.6-sol` with `--thinking high` by default, or the explicitly requested `PI_REVIEW_THINKING` value
 - approves project-local context without prompting
 - exposes only `read` and `bash`, removing direct edit/write tools
 - prints a start message and a heartbeat every 15 seconds
