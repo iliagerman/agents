@@ -1,0 +1,23 @@
+{
+  "skill_name": "buzz",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I have buzz-cli built and BUZZ_RELAY_URL already points at our staging relay. Create a private channel called release-ops, add the agent pubkey from $AGENT_PUBKEY, post RELEASE READY from release-note.md without shell expansion, and verify the message can be read back. Do not expose either private key.",
+      "expected_output": "Uses current buzz help to verify syntax, confirms the staging target before writes, uses the CLI and stdin for content, captures channel/event IDs, adds membership, reads the message back, and never prints secrets.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "In my local block/buzz checkout, add a new agent-facing action that archives a project note. Work out which crates/files should change, implement it, and run the narrowest meaningful tests before the full gate.",
+      "expected_output": "Reads local AGENTS.md, relevant vision/component docs and live CLI structure; prefers a Nostr event where appropriate; routes agent-facing behavior through buzz-cli; keeps tenant/auth boundaries; adds tests and runs focused checks before just ci.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Upgrade our self-hosted Buzz Docker Compose deployment on a VPS. We use Caddy TLS and want minimal downtime. Tell me exactly what to inspect, back up, run, and verify. The checkout may be several weeks behind upstream.",
+      "expected_output": "Inspects the deployed revision and upstream current docs, requires backups of secrets/identity/Postgres/object/git/Caddy state, validates config, pins an artifact, uses the supported run.sh TLS flow, checks probes plus signed functionality, and links exact official Compose/release docs rather than guessing stale flags.",
+      "files": []
+    }
+  ]
+}
