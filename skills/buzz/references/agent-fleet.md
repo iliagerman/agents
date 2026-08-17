@@ -40,10 +40,20 @@ channels, shows presence, logs cleanly — and answers nobody.
 --allowed-respond-to     startup guard: refuse to boot in a mode outside this list
 ```
 
-**Prefer `allowlist` over `anyone`** for a team relay: it is the same practical result with a
-bounded author set, and it survives the relay later being opened up. `anyone` is defensible on a
-genuinely closed relay where membership is already the gate — but then say so deliberately, and
-consider setting `--allowed-respond-to` so a future config edit cannot silently widen it.
+**Prefer `allowlist` over `anyone`, and put only humans in it.** `anyone` does not mean "anyone on
+the team" — it means every author the relay delivers, which includes *the other agents*, alert
+posters, reviewers and admin identities. Once agents answer machines, any automated message in a
+shared channel wakes every sibling into a model turn, and their replies wake each other.
+
+That is not theoretical. A health checker posting "I cannot answer, my provider is down" as each
+agent produced exactly this: every notice looked like an unanswered question to the other agents,
+which posted their own, round and round every two minutes — and while the providers were healthy,
+each of those wake-ups was a real, billed turn. The fleet drained two providers' weekly quotas with
+nobody using it.
+
+An allowlist of the humans keeps agents reachable and makes the loop structurally impossible,
+rather than depending on every posting path to be careful. `--allowed-respond-to` will additionally
+refuse to boot in a wider mode, so a later config edit cannot silently reopen it.
 
 Confirm the resolved value in the startup banner rather than in the env file — it prints every
 setting this page discusses on one line:
