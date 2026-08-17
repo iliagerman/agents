@@ -112,17 +112,24 @@ Each agent needs a unique keypair, relay membership, and channel membership.
 ```bash
 cargo build --release -p buzz-acp -p buzz-admin -p buzz-cli
 export PATH="$PWD/target/release:$PATH"
-export BUZZ_PRIVATE_KEY="nsec1..."
+export BUZZ_PRIVATE_KEY="nsec1..."          # not BUZZ_ACP_PRIVATE_KEY, which does not exist
 export BUZZ_RELAY_URL="ws://localhost:3000"
-export BUZZ_ACP_RESPOND_TO="owner-only"
+export BUZZ_ACP_AGENT_OWNER="<64-char-hex>" # required by the default owner-only author gate
 buzz-acp
 ```
 
-For a local smoke test only, `BUZZ_ACP_RESPOND_TO=anyone` opens the author gate. Do not use it casually on a public relay.
+`BUZZ_ACP_RESPOND_TO` defaults to `owner-only`, gated on `BUZZ_ACP_AGENT_OWNER`. Get that pubkey
+wrong or leave it unset and the agent starts cleanly, joins channels, shows presence — and silently
+drops every message. Use `allowlist` with `BUZZ_ACP_RESPOND_TO_ALLOWLIST` to admit a bounded set of
+people; reserve `anyone` for a closed relay where membership is already the gate.
 
 Use one of the supported ACP adapters and verify current installation instructions in the ACP README. Multiple workers share one public agent identity; per-channel serialization remains enforced. Start with low concurrency and increase only from observed queue pressure.
 
 Owner control messages, when properly authored and mentioned, include `!cancel`, `!rotate`, and `!shutdown`. Confirm current semantics in the ACP README before use.
+
+Anything beyond one agent on your own machine — the other three delivery gates, duplicate replies,
+agents invisible in autocomplete, supervision, agent-created agents — is in
+[agent-fleet.md](agent-fleet.md).
 
 ## Monitoring and troubleshooting
 

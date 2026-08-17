@@ -147,5 +147,17 @@ Channel membership and relay membership differ. An identity may connect to a rel
 - Relay queries require explicit `kinds`; unbounded queries can be rejected by the p-gate.
 - `messages search` should include `--kinds` when the current relay requires bounded search.
 - Leaving a channel fails if the identity is its last owner.
+- Membership writes are asymmetric: `channels add-member` works for an ordinary member, while
+  `remove-member` and `delete` need **owner**. Expect `actor not authorized` when tidying up a
+  channel you merely belong to, and ask the owner rather than retrying.
+- There is no `set-role`. Changing a member's role is `channels leave` as that identity, then
+  `add-member --role <new>` as an identity with rights. Roles: `owner, admin, member, guest, bot`.
+- A channel can exist with **zero members**. It looks normal and every message posted in it is
+  invisible to everyone. Run `channels members` before debugging delivery.
+- `@name` in `--content` notifies only when it uniquely resolves to a member's display name. An
+  identity with no kind:0 profile has no resolvable name, so the mention silently resolves to
+  nothing. Pass `--mention <hex|npub>` and confirm `mention_pubkeys` in the response.
+- `users set-profile` writes the profile of **the key currently signing**. To name someone else's
+  identity you must run it as that identity, not as an admin.
 - `users set-presence` may fail through an HTTP bridge because presence events are ephemeral; inspect current command/help and relay path.
 - Write conflict exit code `5` means reconcile with the latest NIP-33 state; do not blindly retry.

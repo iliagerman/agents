@@ -1,6 +1,6 @@
 ---
 name: buzz
-description: Create, install, configure, operate, automate, troubleshoot, deploy, upgrade, test, extend, or contribute to Block's Buzz human-agent workspace (github.com/block/buzz). Use whenever the user mentions Buzz, buzz-relay, buzz-cli or the `buzz` command, Buzz communities/channels/messages/workflows/repos/agents, Nostr operations in Buzz, ACP agents connected to Buzz, self-hosting Buzz, or modifying the Block Buzz codebase. Do not trigger for unrelated products merely named “buzz.”
+description: Create, install, configure, operate, automate, troubleshoot, deploy, upgrade, test, extend, or contribute to Block's Buzz human-agent workspace (github.com/block/buzz). Use whenever the user mentions Buzz, buzz-relay, buzz-cli or the `buzz` command, Buzz communities/channels/messages/workflows/repos/agents, Nostr operations in Buzz, ACP agents connected to Buzz, self-hosting Buzz, or modifying the Block Buzz codebase. Also use when running buzz-acp agents unattended — adding or provisioning agents, managing channel membership and roles, or diagnosing an agent that is silent, repeating itself, or missing from @-mention autocomplete. Do not trigger for unrelated products merely named “buzz.”
 compatibility: Git and a POSIX shell. Building or self-hosting Buzz may require Docker, Hermit, Rust, Node, pnpm, just, Flutter, or Helm depending on the requested surface.
 ---
 
@@ -17,16 +17,23 @@ Choose one path before acting:
 3. **Run locally** — source checkout, Docker dependencies, relay, desktop/web/mobile clients.
 4. **Self-host** — Docker Compose, Railway, or Helm/Kubernetes.
 5. **Connect agents** — `buzz-acp`, ACP runtime, identity, membership, subscriptions.
-6. **Modify Buzz** — change relay, CLI, desktop, web, mobile, workflows, protocol, deployment, or release tooling.
-7. **Troubleshoot** — identify failing layer first: client, identity/auth, relay, Postgres, Redis, S3/MinIO, agent harness, or deployment.
+6. **Run agents unattended** — a fleet on a server: gates, visibility, supervision, agent-created agents.
+7. **Modify Buzz** — change relay, CLI, desktop, web, mobile, workflows, protocol, deployment, or release tooling.
+8. **Troubleshoot** — identify failing layer first: client, identity/auth, relay, Postgres, Redis, S3/MinIO, agent harness, or deployment.
 
 Read only the matching bundled reference:
 
 - CLI/community actions: [references/cli.md](references/cli.md)
 - Local development and code changes: [references/development.md](references/development.md)
 - Deployment and operations: [references/operations.md](references/operations.md)
+- Agents running unattended, and why one is silent: [references/agent-fleet.md](references/agent-fleet.md)
 - Architecture and change routing: [references/architecture.md](references/architecture.md)
 - Official documentation links: [references/docs.md](references/docs.md)
+
+**A silent, duplicating, or invisible agent is a configuration result, not a crash.** Go to
+[references/agent-fleet.md](references/agent-fleet.md) before reading relay logs — the harness
+defaults (`--respond-to owner-only`, `--multiple-event-handling steer`) produce exactly those three
+symptoms while everything reports healthy.
 
 ## Establish authority and version
 

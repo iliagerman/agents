@@ -18,6 +18,24 @@
       "prompt": "Upgrade our self-hosted Buzz Docker Compose deployment on a VPS. We use Caddy TLS and want minimal downtime. Tell me exactly what to inspect, back up, run, and verify. The checkout may be several weeks behind upstream.",
       "expected_output": "Inspects the deployed revision and upstream current docs, requires backups of secrets/identity/Postgres/object/git/Caddy state, validates config, pins an artifact, uses the supported run.sh TLS flow, checks probes plus signed functionality, and links exact official Compose/release docs rather than guessing stale flags.",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Our buzz-acp agent has been running for a day and has never answered anyone. The service is active, the logs show no errors, it reports discovering our channels, and it appears in the member list. Where do you look?",
+      "expected_output": "Recognises this as a delivery-gate result rather than a crash, and works the gates in order: channel membership, subscription (with --subscribe config, a membership without a matching rule is never subscribed), mention filter, then the author gate. Identifies --respond-to owner-only as the default and BUZZ_ACP_AGENT_OWNER being unset or holding the wrong pubkey as the likeliest cause, and checks the resolved value in the startup banner rather than the env file. Recommends allowlist over anyone where the author set is known. Does not start by reading relay logs or restarting the service.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Our agent answers every message three or four times, and nobody can @-mention it from Buzz Desktop — it doesn't show up in the autocomplete, and in the member list it's just a string of hex. Fix both.",
+      "expected_output": "Attributes the repetition to --multiple-event-handling defaulting to steer with an adapter that cannot steer, so each mid-turn event becomes cancel+re-prompt, and sets queue. Attributes the missing autocomplete entry to channel role bot being routed through the desktop's managed-agent list (upstream block/buzz#4489) and re-adds the identity as member, noting there is no set-role so it must leave and be re-added. Attributes the hex display to a missing kind:0 profile and runs users set-profile signed by that agent's own key, not an admin's.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "I want an agent in a #bot-factory channel that can provision new agents when I approve. Design it.",
+      "expected_output": "Treats the approval gate as the core of the design, not an afterthought. Defines the approver structurally — any pubkey that is not one of the provisioned agent identities — rather than hard-coding a single owner pubkey. Normalises approval text before matching (markdown punctuation, whitespace, case), uses a confusable-free ID alphabet, accepts a bare approve resolved to the newest open proposal, scans enough history to catch threaded replies, and offers cancel. Provisions with a distinct keypair, a kind:0 profile, channel role member, and a supervised unit. Keeps the factory's signing key in a root-owned file rather than a secret store the agents themselves can read, and notes that otherwise an agent could approve its own creation.",
+      "files": []
     }
   ]
 }
