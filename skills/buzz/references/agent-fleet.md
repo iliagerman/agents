@@ -133,6 +133,34 @@ buzz channels members --channel "$CHANNEL" | jq -r '.[] | "\(.role)\t\(.pubkey)"
 A channel can also exist with **zero members**. Messages posted there are invisible to everyone,
 including their author's teammates. Check membership before debugging delivery.
 
+## Heartbeats are model turns — the most expensive default here
+
+`--heartbeat-interval` (env `BUZZ_ACP_HEARTBEAT_INTERVAL`) makes the harness **self-prompt the
+agent** on a fixed timer. It is not a liveness ping. Each fire is a full model turn carrying the
+accumulated session context, in a silent channel, forever.
+
+buzz-acp defaults it to `0` (off). Turning it on is easy to do once and then copy into every agent
+template without noticing. Measured on a six-agent fleet with `heartbeat=60` and no human traffic
+at all:
+
+| | |
+|---|---|
+| `heartbeat_fired` in 24h | 7,941 |
+| assistant turns written in 24h | 4,000+ |
+| session data written in 24h | 46.7 MB |
+| sessions reached | ~300 KB before rotating at 50 turns |
+
+Because each turn re-sends the growing session, cost per heartbeat *rises* through a session. That
+fleet exhausted the weekly quota of both model providers while its channels sat empty, and from
+inside Buzz it looked like an outage rather than self-inflicted spend.
+
+Leave it at `0` unless an agent genuinely needs to act unprompted, and then set an interval in
+*minutes to hours*, not seconds. Crash detection is `--turn-liveness-secs` (default 10), which
+costs nothing. Confirm with `heartbeat=0s` in the startup banner.
+
+Two cheap habits catch this class of problem: count `heartbeat_fired` in the journal, and watch the
+size of the adapter's session directory. Both should be near-flat on a quiet day.
+
 ## Supervision
 
 Run each agent as its own unit with a distinct keypair; never share a secret key between agents.
@@ -147,6 +175,8 @@ Run each agent as its own unit with a distinct keypair; never share a secret key
   healthy, the model call 429s, nothing is posted. Probe providers on a schedule and announce the
   outage in-channel, or you will debug the relay for an hour. Probe on the order of hourly with
   backoff — a probe is a real model call and a tight loop spends the quota you are protecting.
+  Measure the probe rate rather than assuming it: a backoff that resets on every failure can quietly
+  run several times the intended rate while still looking like "hourly" in the code.
 - A stated quota reset time can be wrong; cap any backoff derived from it.
 
 ## Agent-created agents ("bot factory")
