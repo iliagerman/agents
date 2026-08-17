@@ -52,6 +52,8 @@ Vision is not proof of implementation. Cross-check source/tests.
 - Railway template: <https://railway.com/deploy/buzz-relay-block>
 - Railway/operator article: <https://engineering.block.xyz/blog/run-your-own-buzz-relay>
 - Push gateway deployment: <https://github.com/block/buzz/blob/main/docs/push-gateway-deployment.md>
+- Device-pairing relay deployment: <https://github.com/block/buzz/blob/main/deploy/charts/buzz/README.md#device-pairing-relay>
+- Pairing sidecar implementation/security model: <https://github.com/block/buzz/tree/main/crates/buzz-pair-relay>
 - Linux rendering troubleshooting: <https://github.com/block/buzz/blob/main/docs/linux-rendering-troubleshooting.md>
 
 ## Specialized architecture

@@ -36,6 +36,24 @@
       "prompt": "I want an agent in a #bot-factory channel that can provision new agents when I approve. Design it.",
       "expected_output": "Treats the approval gate as the core of the design, not an afterthought. Defines the approver structurally — any pubkey that is not one of the provisioned agent identities — rather than hard-coding a single owner pubkey. Normalises approval text before matching (markdown punctuation, whitespace, case), uses a confusable-free ID alphabet, accepts a bare approve resolved to the newest open proposal, scans enough history to catch threaded replies, and offers cancel. Provisions with a distinct keypair, a kind:0 profile, channel role member, and a supervised unit. Keeps the factory's signing key in a root-owned file rather than a secret store the agents themselves can read, and notes that otherwise an agent could approve its own creation.",
       "files": []
+    },
+    {
+      "id": 7,
+      "prompt": "Buzz Desktop's Share connection flow against our closed self-hosted relay fails with `WebSocket connection failed: HTTP error: 404 Not Found`. Normal relay messaging works. Diagnose and fix the deployment.",
+      "expected_output": "Identifies the NIP-43 legacy `/pair` fallback, confirms the 404 with NIP-11 and an upgrade request, deploys the stateless `buzz-pair-relay` sidecar behind TLS, configures `BUZZ_PAIRING_RELAY_URL`, and verifies a 101 WebSocket upgrade plus unaffected signed main-relay access. Uses Compose `entrypoint`, not `command`, for the sidecar and keeps its raw port private.",
+      "files": []
+    },
+    {
+      "id": 8,
+      "prompt": "My self-hosted Buzz relay advertises push support and logs that the NIP-PL worker started, but my iPhone gets no notifications when the Buzz app is closed. Is my APNs setup broken?",
+      "expected_output": "Checks current official implementation status before changing permissions or APNs config. Explains that server-side NIP-PL/gateway infrastructure is not end-to-end client support, cites the README and push-gateway relay-integration status, notes the missing current mobile enrollment/lease path and APNs entitlement, checks `push_leases`, and concludes that zero leases plus pending mobile push code means closed-app notifications are not currently available. Does not suggest that self-hosting the gateway alone will fix it.",
+      "files": []
+    },
+    {
+      "id": 9,
+      "prompt": "How do I enable Buzz notifications on Android? Android's app settings do not show a Notifications permission.",
+      "expected_output": "Explains that there is no setting to enable because the current Android app does not declare POST_NOTIFICATIONS or integrate Firebase Messaging, while the deployed public gateway supports APNs rather than FCM. Cites NIP-PL's statement that FCM is a future non-conforming v1 profile. Distinguishes foreground WebSocket message receipt from background push and does not recommend reinstalling, battery exemptions, or notification-channel changes as a fix for absent implementation.",
+      "files": []
     }
   ]
 }

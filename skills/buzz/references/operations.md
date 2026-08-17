@@ -80,6 +80,86 @@ Production requirements:
 - Closed mode needs `RELAY_OWNER_PUBKEY`, relay membership, and stable signing identity.
 - Migrations are opt-in through `BUZZ_AUTO_MIGRATE=true` or explicit `buzz-admin migrate`.
 
+### Device-pairing relay and `/pair` 404s
+
+Mobile identity sharing uses a separate, stateless NIP-AB WebSocket relay. A closed main relay advertises NIP-43 membership. Buzz Desktop interprets NIP-43 without an explicit `pairing_relay_url` as the legacy `<main-relay>/pair` endpoint. If the reverse proxy has no `/pair` route, pairing fails with:
+
+```text
+WebSocket connection failed: HTTP error: 404 Not Found
+```
+
+Do not route pairing through the authenticated main relay. Run the `buzz-pair-relay` binary included in the Buzz image, expose it only through TLS, and set `BUZZ_PAIRING_RELAY_URL` on the main relay. The pairing relay has no auth or persistence; it verifies signed kind `24134` events and enforces tight connection, frame, event, and lifetime limits. Keep its raw port on loopback or a private container network.
+
+Example Compose service:
+
+```yaml
+services:
+  pairing-relay:
+    image: ${BUZZ_IMAGE:-ghcr.io/block/buzz:main}
+    # Compose `command` does not replace the image ENTRYPOINT. Use `entrypoint`
+    # or the container starts the main relay and then fails on missing DB config.
+    entrypoint: ["/usr/local/bin/buzz-pair-relay"]
+    environment:
+      BUZZ_PAIR_RELAY_BIND_ADDR: 0.0.0.0:5000
+    ports:
+      - "127.0.0.1:${BUZZ_PAIR_HTTP_PORT:-8790}:5000"
+    restart: unless-stopped
+```
+
+For a Tailnet-only deployment, a separate TLS port avoids path-routing ambiguity:
+
+```bash
+tailscale serve --bg --https=8445 http://127.0.0.1:8790
+```
+
+Then configure and recreate the main relay:
+
+```dotenv
+BUZZ_PAIRING_RELAY_URL=wss://buzz-host.example:8445
+```
+
+Verify discovery and the actual WebSocket upgrade:
+
+```bash
+curl -fsS -H 'Accept: application/nostr+json' https://buzz-host.example/ \
+  | jq -r .pairing_relay_url
+
+curl --http1.1 -isS --max-time 3 \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  https://buzz-host.example:8445/ | head -1
+# HTTP/1.1 101 Switching Protocols
+```
+
+A `101` proves the TLS proxy reaches the pairing sidecar. Also confirm the main relay and a signed CLI read still work after recreation. Official implementation: [pairing discovery](https://github.com/block/buzz/blob/main/desktop/src-tauri/src/commands/pairing.rs), [pairing sidecar](https://github.com/block/buzz/tree/main/crates/buzz-pair-relay), and [Helm pairing relay](https://github.com/block/buzz/blob/main/deploy/charts/buzz/README.md#device-pairing-relay).
+
+### Mobile push-notification status
+
+Do not diagnose absent background notifications as an iOS permission or relay outage before checking current product status. Buzz's README currently lists mobile clients as being wired up and push notifications as pending code. The relay-side NIP-PL matcher and standalone APNs gateway exist, but that is not end-to-end mobile support.
+
+The deployment documentation states that delivery still requires the mobile client to complete App Attest enrollment/delegation and place a gateway-issued opaque capability in an encrypted relay lease. Current OSS mobile source has no NIP-PL enrollment/lease path and no iOS `aps-environment` entitlement. Therefore:
+
+- messages can arrive while the mobile app is foregrounded and its WebSocket is connected;
+- background/closed-app push notifications are not currently available in the OSS mobile client;
+- seeing `push` in the relay's NIP-11 document or `NIP-PL push matcher and delivery worker started` in logs does not prove a phone is registered;
+- self-hosting `buzz-push-gateway` alone does not fix this; it also requires Apple APNs/App Attest credentials and matching client implementation;
+- Android cannot enable push from system settings because the current app manifest lacks `android.permission.POST_NOTIFICATIONS`, the app has no Firebase Messaging integration, and the gateway is APNs-specific. The NIP-PL draft explicitly defines FCM as a future, non-conforming v1 profile.
+
+Useful checks:
+
+```bash
+curl -fsS -H 'Accept: application/nostr+json' https://buzz.example.com/ | jq .push
+# Server capability only; not evidence of a registered device.
+
+# Run against the relay PostgreSQL database.
+psql "$DATABASE_URL" -Atc 'select count(*) from push_leases'
+# Zero means no mobile endpoint lease exists, so no push can be matched.
+```
+
+Official evidence: [README implementation status](https://github.com/block/buzz/blob/main/README.md#works-today--being-wired-up--strong-opinions-pending-code), [push gateway deployment, relay integration status](https://github.com/block/buzz/blob/main/docs/push-gateway-deployment.md#relay-integration-status), and [NIP-PL FCM status](https://github.com/block/buzz/blob/main/docs/nips/NIP-PL.md#fcm).
+
 ## Railway
 
 Use upstream’s [Railway template](https://railway.com/deploy/buzz-relay-block) and [operator article](https://engineering.block.xyz/blog/run-your-own-buzz-relay). Verify current template variables rather than translating old Compose settings blindly.
