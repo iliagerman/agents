@@ -2,7 +2,7 @@
 set -uo pipefail
 
 scope=${*:-Review staged and unstaged changes; if the working tree is clean, review the current branch against its default base branch.}
-thinking=${PI_REVIEW_THINKING:-high}
+thinking=${PI_REVIEW_THINKING:-medium}
 case "$thinking" in
   off|minimal|low|medium|high|xhigh|max) ;;
   *) printf 'Invalid PI_REVIEW_THINKING: %s\n' "$thinking" >&2; exit 2 ;;
