@@ -1,0 +1,41 @@
+{
+  "skill_name": "claude-develop",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use Sol to plan this tiny fix and Claude Haiku to implement it: the Python `add` function subtracts instead of adding. Run the focused unittest. Do not commit anything.",
+      "expected_output": "Pi inspects and plans first, explicitly selects Haiku because the change is narrow and the user requested it, delegates editing/testing to Claude, independently reruns the unittest, verifies no commit occurred, and reports both Claude and pi checks.",
+      "files": [],
+      "expectations": [
+        "The fixture's focused unittest passes after the change.",
+        "The report identifies Claude Haiku as the implementation model.",
+        "The report distinguishes Claude's test run from pi's independent rerun.",
+        "The fixture remains at one commit; Claude and pi did not commit."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Plan and implement support for case-insensitive username lookup across the repository and service layers. Add focused tests. Use the Sol-to-Claude workflow and choose the appropriate Claude model. Do not commit.",
+      "expected_output": "Pi owns repository inspection and a concrete plan, chooses Sonnet for a multi-file behavior change, Claude implements and runs focused tests without Git delivery, then pi reviews the complete diff and independently reruns validation.",
+      "files": [],
+      "expectations": [
+        "Case-insensitive lookup works for both lowercase and uppercase usernames and focused tests pass.",
+        "The report identifies Claude Sonnet as the implementation model.",
+        "The report distinguishes Claude's checks from pi's independent validation and diff review.",
+        "The fixture remains at one commit."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use claude-develop to fix the failing greeting test, then commit and push the result. Test everything relevant before delivery.",
+      "expected_output": "Claude changes code and runs focused tests but does not commit or push. Pi independently checks the diff, reruns relevant validation, reviews the change, then pi alone creates and pushes the requested commit after all checks pass.",
+      "files": [],
+      "expectations": [
+        "The greeting test passes before delivery.",
+        "The report states that Claude implemented without committing or pushing and pi performed delivery.",
+        "The report records pi's independent validation and review before commit.",
+        "The local and remote repositories contain the new delivery commit and the working tree is clean."
+      ]
+    }
+  ]
+}
