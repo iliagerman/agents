@@ -9,8 +9,7 @@ metadata:
     "ilia":
       {
         "emoji": "🎨",
-        "requires": { "bins": ["uv"], "env": ["GEMINI_API_KEY"] },
-        "primaryEnv": "GEMINI_API_KEY",
+        "requires": { "bins": ["uv"] },
       },
   }
 ---
@@ -63,7 +62,15 @@ Priority order:
 
 Record the chosen hex color — you'll use it in Phases 3 and 4.
 
-### Phase 3: Generate the Image via Nano Banana
+### Phase 3: Choose a Provider and Generate the Image
+
+Use Nano Banana Pro through the existing Gemini skill by default. When the user
+explicitly selects Atlas Cloud, or Gemini is unavailable and
+`ATLASCLOUD_API_KEY` is configured, use the bundled Atlas helper. Atlas Cloud
+generation is billable, so confirm the model and expected charge with the user
+before running either command. Never pass an API key on the command line.
+
+#### Gemini (default)
 
 Run the existing nano-banana-pro generation script:
 
@@ -73,6 +80,26 @@ uv run {skills.nano-banana-pro.baseDir}/scripts/generate_image.py \
   --filename "<TIMESTAMPED-PATH>.png" \
   --resolution 1K
 ```
+
+#### Atlas Cloud (optional)
+
+The helper verifies the selected model against the live Atlas catalog and its
+current input schema before submitting exactly one generation request. It only
+retries prediction GET requests with bounded backoff.
+
+```bash
+export ATLASCLOUD_API_KEY="..."
+
+uv run {baseDir}/scripts/generate_image_atlas.py \
+  --prompt "<CRAFTED PROMPT>" \
+  --filename "<TIMESTAMPED-PATH>.png" \
+  --model google/nano-banana-pro/text-to-image \
+  --aspect-ratio 1:1 \
+  --resolution 1K
+```
+
+`ATLAS_CLOUD_API_KEY` is accepted as a compatibility alias. Keep Gemini as the
+default provider when both keys are available unless the user chooses Atlas.
 
 **Prompt crafting rules** (follow these exactly):
 
@@ -149,6 +176,7 @@ uv run {baseDir}/scripts/remove_bg.py \
 ## Notes
 
 - Resolutions: `1K` (default, good for icons), `2K` (illustrations), `4K` (hero images)
+- Provider credentials: Gemini uses `GEMINI_API_KEY`; the optional Atlas route uses `ATLASCLOUD_API_KEY`
 - For icons, keep the subject centered with generous padding from edges
 - Prefer solid, filled icon designs over outlined/hollow ones — open shapes expose the background through interior gaps, making clean removal harder
 - For best background removal, avoid complex scenes with thin details at the edges (e.g., hair, wispy smoke) — bold clean shapes work best
