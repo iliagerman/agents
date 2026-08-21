@@ -1,106 +1,113 @@
 ---
 name: claude-develop
-description: Delegate code implementation from pi to Claude Code while pi/GPT-5.6 Sol retains planning, review, and delivery control. Use for coding, refactoring, bug fixes, tests, scripts, APIs, or UI implementation when the user asks Pi, Sol, or GPT-5.6 Sol to plan and have Claude implement, mentions a Sol-to-Claude development workflow, requests Claude Haiku or Sonnet for coding, or invokes `claude-develop`. Claude writes and tests code; pi independently verifies it and alone may commit or push.
-compatibility: Requires `claude` on PATH and an authenticated Claude Code setup with access to `sonnet` or `haiku`.
+description: Use for Claude Code development, `/claude-develop`, Opus implementation planning, Haiku coding, or detailed implementation plans where Opus must inspect, plan, review, validate, and deliver while Haiku edits and tests.
+compatibility: Requires authenticated Claude Code with access to Opus and Haiku.
 ---
 
 # Claude Develop
 
-Use Claude Code as implementation worker. Keep planning, acceptance, review, and Git delivery with pi.
+## 1. Role/model contract
 
-## Ownership
+The active parent must be Opus. If it is not Opus, or its identity cannot be confirmed, stop and ask the user to switch with `/model opus`. Never spawn Opus as a hidden planner. Never let Haiku plan.
 
-- **Pi/Sol:** inspect repository, read instructions, plan exact changes, choose model, review diff, rerun validation, commit, push, and report.
-- **Claude:** edit code and tests, run focused checks, and summarize work.
-- Never ask Claude to commit, push, create/switch branches, create worktrees, merge, rebase, reset, or clean files.
-- Do not delegate planning. Give Claude a complete implementation brief produced by pi.
+## 2. Ownership
 
-## Model selection
+- **Opus:** inspect, plan, review, independently validate, and deliver.
+- **Haiku:** edit, run approved checks, and summarize.
+- Haiku output is evidence only. Haiku must not perform Git operations or edit `.git`.
 
-Respect an explicit user choice. Otherwise:
+## 3. Implementation-grade planning standard
 
-- Use `sonnet` by default.
-- Use `haiku` only for narrow mechanical work: one-file edits, straightforward test additions, renames, formatting, or a fully specified small change with low debugging risk.
-- Escalate to `sonnet` when Haiku's result is incomplete or incorrect. Do not keep retrying Haiku to save cost.
+Before writing a brief, Opus reads applicable repository instructions and real code. Because the child uses safe mode, Opus copies every applicable repository instruction into the brief. The brief must name exact paths; copy verified symbols and signatures exactly; order edits; explain data/control flow, edge cases, and errors; state exclusions; list exact approved checks; and include concise code or pseudocode anchored to inspected repository APIs.
 
-## Workflow
+Opus rejects a tool targeting `.git` and rejects a proposed check containing Git, `.git`, nested `pi` or `claude`, destructive shell actions, or unrelated commands. The approved checks contain only validation needed for the approved change.
 
-1. Read applicable project instructions and relevant files. Inspect `git status` before delegation.
-2. Produce a concise implementation brief containing:
-   - goal and acceptance criteria;
-   - exact files or components in scope;
-   - required behavior and constraints;
-   - existing conventions to preserve;
-   - tests/checks Claude must run;
-   - explicit exclusions;
-   - instruction to leave commits and pushes to pi.
-3. Run Claude from the target repository root in non-interactive print mode:
+Use this template:
+
+```text
+Goal
+Acceptance criteria
+Repository instructions
+- every applicable instruction copied verbatim
+Repository evidence
+- exact file paths read
+- existing symbols/signatures copied exactly
+Files and ordered edits
+1. path + symbol
+   Current behavior
+   Required change
+   Data/control flow
+   Edge cases and errors
+   Code example or pseudocode anchored to the verified API
+Tests
+- exact test files/cases
+- exact commands and working directory
+Constraints and explicit exclusions
+Definition of done
+Coder restrictions
+Return format
+```
+
+Illustrative shape only; replace it with inspected project symbols and APIs. Preserve the repository's actual error policy:
+
+```ts
+// Existing verified signature:
+export function normalizeUsername(value: string): string
+
+// Target body shape; preserve the repository's existing error policy:
+export function normalizeUsername(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US");
+}
+```
+
+## 4. Weak-coder readiness gate
+
+Do not invoke Haiku until the brief has no vague steps, invented APIs, unresolved choices, placeholders, or commands that cannot run from its stated directory. “Update the service” is not a step. Stop and inspect more code when this gate fails.
+
+## 5. Canonical Haiku invocation
+
+From the target repository root, set `IMPLEMENTATION_BRIEF` to the approved ready brief. Build `HAIKU_TOOLS` from exact absolute in-scope file paths and exact approved check commands. For example:
+
+```bash
+HAIKU_TOOLS=(
+  "Read"
+  "Glob"
+  "Grep"
+  "Edit(/absolute/path/src/users.py)"
+  "Edit(/absolute/path/tests/test_users.py)"
+  "Bash(python3 -m unittest tests/test_users.py)"
+)
+```
+
+Then run:
 
 ```bash
 printf '%s\n' "$IMPLEMENTATION_BRIEF" | claude -p \
   --no-session-persistence \
-  --model sonnet \
-  --permission-mode acceptEdits \
-  --allowedTools "Read" "Edit" "Write" "Glob" "Grep" "Bash" \
-  --disallowedTools \
-    "Bash(git commit *)" \
-    "Bash(git push *)" \
-    "Bash(git merge *)" \
-    "Bash(git rebase *)" \
-    "Bash(git reset *)" \
-    "Bash(git checkout *)" \
-    "Bash(git switch *)" \
-    "Bash(git clean *)" \
-    "Bash(git worktree *)"
+  --safe-mode \
+  --model haiku \
+  --permission-mode dontAsk \
+  --allowedTools "${HAIKU_TOOLS[@]}" \
+  --disallowedTools "Bash(git *)" "Edit(**/.git/**)"
 ```
 
-Replace `sonnet` with `haiku` only under the selection rule above. Set a long Bash-tool timeout appropriate for implementation work. Do not use `--bare`: Claude needs project instructions and the user's existing authenticated setup.
+Claude Code's `Edit(path)` permission covers all file-editing tools, including new files; do not emit `Write(path)` permission rules. Safe mode disables skills, hooks, plugins, MCP, agents, and project customization while preserving authentication, model, tools, and permissions. Do not add `--disable-slash-commands` or broad `Read`/`Edit`/`Write`/`Bash` allowlists. Do not use `--bare`; the child needs authenticated setup.
 
-4. Read Claude's output. Inspect `git status`, the complete diff, and every changed file. Confirm scope and project rules.
-5. Independently rerun the relevant tests, lint, type checks, or build from pi. Claude's reported success is evidence, not final verification.
-6. If verification fails because of Claude's change, give Claude one focused repair brief containing the exact failure and relevant diff. Reinspect and rerun checks afterward. Pi may make a tiny correction directly when delegation would cost more than the fix.
-7. Before a requested commit or push, follow the repository's review and delivery skills. Commit and push only after pi's checks pass. Claude never performs Git delivery.
+Haiku can modify only the exact paths listed by `Edit(path)` entries in `HAIKU_TOOLS` and run only exact Opus-approved checks. It has no general shell. The brief must forbid every Git operation and every `.git` edit, including commit, push, branch/worktree changes, merge, rebase, reset, restore, clean, and checkout/switch.
 
-## Brief template
+## 6. Review, independent validation, one repair, optional delivery
 
-```text
-Implement the approved plan in this repository.
+Opus reads Haiku output, every changed file, and the full diff. Opus independently reruns the relevant tests, lint, typecheck, build, or other checks named in the brief. Haiku-reported checks do not replace this validation.
 
-Goal:
-[desired outcome]
+If Haiku caused a failure, give it one focused repair brief with the exact failure and relevant diff. Then repeat file/diff review and independent validation. Opus remains delivery owner. Only when explicitly requested and validation passes may Opus commit and push.
 
-Acceptance criteria:
-- [observable result]
+## 7. Detailed brief template
 
-Files/components in scope:
-- [path or component]
+The brief uses the template in section 3 verbatim as headings. Under **Coder restrictions**, state that Haiku may edit only the exact listed paths and run only exact listed checks; it must not plan, make Git calls, edit `.git`, commit, push, create or switch branches, create worktrees, merge, rebase, reset, restore, clean, or deliver. Under **Return format**, require changed files, implementation summary, checks run with results, and unresolved failures.
 
-Implementation plan:
-1. [specific change]
+## 8. Failure handling and completion report
 
-Constraints:
-- Read and follow all repository instructions.
-- Preserve existing conventions and unrelated behavior.
-- Add or update tests for changed behavior.
-- Run: [focused checks].
-- Do not commit, push, create/switch branches, create worktrees, merge, rebase, reset, or clean files.
-
-Return a concise summary of changed files and commands run, including failures.
-```
-
-## Failure handling
-
-- Missing `claude` or authentication: stop and report the exact error. Do not silently implement the delegated task with another model.
-- Claude exits unsuccessfully: preserve its output, inspect partial changes, and report or issue a focused repair brief based on the concrete failure.
-- Pre-existing dirty files: preserve them. Scope Claude's work explicitly and never discard unrelated changes.
-
-## Completion report
-
-Report:
-
-- Claude model used;
-- files changed;
-- checks Claude ran;
-- checks pi independently ran;
-- review outcome;
-- commit hash and push target, only when requested and completed.
+- If Claude Code, authentication, Opus, or Haiku is unavailable, stop and report the exact failure. Do not substitute a model or hidden planner.
+- If the required exact tool entry cannot be constructed, do not invoke Haiku; revise the inspected scope or brief.
+- Preserve partial and pre-existing changes; inspect them before deciding whether the one repair brief applies.
+- Report: parent/child models, files changed, Haiku checks, Opus independent checks, full-diff review result, repair status, and commit/push result only if requested and completed.

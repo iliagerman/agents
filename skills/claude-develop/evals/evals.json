@@ -3,38 +3,48 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Use Sol to plan this tiny fix and Claude Haiku to implement it: the Python `add` function subtracts instead of adding. Run the focused unittest. Do not commit anything.",
-      "expected_output": "Pi inspects and plans first, explicitly selects Haiku because the change is narrow and the user requested it, delegates editing/testing to Claude, independently reruns the unittest, verifies no commit occurred, and reports both Claude and pi checks.",
-      "files": [],
+      "prompt": "Use /claude-develop to add case-insensitive username lookup across this repository and service. Add focused tests. Do not commit.",
+      "expected_output": "Opus inspects repository code, copies applicable repository instructions into a ready implementation brief, and constructs exact file and check tools before Haiku edits. Haiku tests only through an exact allowed Bash entry, then Opus reviews every changed file and the full diff and independently reruns validation.",
+      "files": [
+        "evals/fixtures/username_lookup/repository.py",
+        "evals/fixtures/username_lookup/service.py",
+        "evals/fixtures/username_lookup/test_users.py"
+      ],
       "expectations": [
-        "The fixture's focused unittest passes after the change.",
-        "The report identifies Claude Haiku as the implementation model.",
-        "The report distinguishes Claude's test run from pi's independent rerun.",
-        "The fixture remains at one commit; Claude and pi did not commit."
+        "The brief identifies exact repository and service symbols with copied signatures and copies applicable repository instructions.",
+        "The brief includes ordered edits, data/control flow, edge cases, exclusions, and runnable approved checks.",
+        "HAIKU_TOOLS contains exact absolute Edit paths covering all file editing and exact approved Bash checks.",
+        "No commit or push occurs."
       ]
     },
     {
       "id": 2,
-      "prompt": "Plan and implement support for case-insensitive username lookup across the repository and service layers. Add focused tests. Use the Sol-to-Claude workflow and choose the appropriate Claude model. Do not commit.",
-      "expected_output": "Pi owns repository inspection and a concrete plan, chooses Sonnet for a multi-file behavior change, Claude implements and runs focused tests without Git delivery, then pi reviews the complete diff and independently reruns validation.",
-      "files": [],
+      "prompt": "Use /claude-develop to fix a narrow one-file greeting bug and run its focused test. Do not commit.",
+      "expected_output": "Opus remains the fixed planner and reviewer, prepares a complete brief after inspection, and invokes Haiku in safe mode with dontAsk and only exact in-scope file and check tools.",
+      "files": [
+        "evals/fixtures/greeting/greeting.py",
+        "evals/fixtures/greeting/test_greeting.py"
+      ],
       "expectations": [
-        "Case-insensitive lookup works for both lowercase and uppercase usernames and focused tests pass.",
-        "The report identifies Claude Sonnet as the implementation model.",
-        "The report distinguishes Claude's checks from pi's independent validation and diff review.",
-        "The fixture remains at one commit."
+        "The active parent is Opus or the workflow stops with the required model-switch instruction.",
+        "The Haiku child uses --safe-mode and --permission-mode dontAsk.",
+        "Haiku has exact Edit paths covering all file editing and an exact approved Bash check, not broad shell access.",
+        "Opus independently reviews and reruns the focused test."
       ]
     },
     {
       "id": 3,
-      "prompt": "Use claude-develop to fix the failing greeting test, then commit and push the result. Test everything relevant before delivery.",
-      "expected_output": "Claude changes code and runs focused tests but does not commit or push. Pi independently checks the diff, reruns relevant validation, reviews the change, then pi alone creates and pushes the requested commit after all checks pass.",
-      "files": [],
+      "prompt": "Use /claude-develop to fix the failing greeting behavior, validate it, then commit and push when ready.",
+      "expected_output": "Haiku edits only listed paths and runs only exact approved checks. Opus reviews every changed file and the full diff, independently validates, and alone performs requested delivery after checks pass.",
+      "files": [
+        "evals/fixtures/greeting/greeting.py",
+        "evals/fixtures/greeting/test_greeting.py"
+      ],
       "expectations": [
-        "The greeting test passes before delivery.",
-        "The report states that Claude implemented without committing or pushing and pi performed delivery.",
-        "The report records pi's independent validation and review before commit.",
-        "The local and remote repositories contain the new delivery commit and the working tree is clean."
+        "Haiku performs no commit or push.",
+        "The child uses safe mode, dontAsk, exact Edit file rules, exact check rules, and no broad shell.",
+        "Opus independently validates before delivery.",
+        "Only Opus reports the requested commit and push result."
       ]
     }
   ]
