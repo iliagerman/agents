@@ -1,0 +1,36 @@
+# Template: self-contained image for __SERVICE__.
+# Built locally and shipped to the homeserver via `docker save | scp | docker load`.
+# Replace __PORT__ and the COPY/RUN steps with what your service actually needs.
+
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# curl is only needed for the container HEALTHCHECK.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies in their own layer for caching, then copy source.
+# Replace this with your project's real install steps — but keep them
+# self-contained so the running container does NOT pip install on start.
+COPY pyproject.toml /app/pyproject.toml
+COPY src /app/src
+RUN pip install .
+
+# Optional: persistent data lives here. docker-compose mounts a named volume.
+RUN mkdir -p /data
+VOLUME ["/data"]
+
+EXPOSE __PORT__
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=5 \
+    CMD curl -fsS "http://127.0.0.1:__PORT__/" >/dev/null || exit 1
+
+# Replace with the actual entrypoint your project exposes.
+CMD ["__SERVICE__", "--host", "0.0.0.0", "--port", "__PORT__"]

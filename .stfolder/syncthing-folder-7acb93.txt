@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: joint-bob-skills-3YtdMEs8AW
+created: 2026-08-24T14:02:39Z

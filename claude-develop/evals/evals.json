@@ -1,0 +1,51 @@
+{
+  "skill_name": "claude-develop",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Use /claude-develop to add case-insensitive username lookup across this repository and service. Add focused tests. Do not commit.",
+      "expected_output": "Fable 5.1 inspects repository code, copies applicable repository instructions into a ready implementation brief, and constructs exact file and check tools before Haiku edits. Haiku tests only through an exact allowed Bash entry, then Fable 5.1 reviews every changed file and the full diff and independently reruns validation.",
+      "files": [
+        "evals/fixtures/username_lookup/repository.py",
+        "evals/fixtures/username_lookup/service.py",
+        "evals/fixtures/username_lookup/test_users.py"
+      ],
+      "expectations": [
+        "The brief identifies exact repository and service symbols with copied signatures and copies applicable repository instructions.",
+        "The brief includes ordered edits, data/control flow, edge cases, exclusions, and runnable approved checks.",
+        "HAIKU_TOOLS contains exact absolute Edit paths covering all file editing and exact approved Bash checks.",
+        "No commit or push occurs."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Use /claude-develop to fix a narrow one-file greeting bug and run its focused test. Do not commit.",
+      "expected_output": "Fable 5.1 remains the fixed planner and reviewer, prepares a complete brief after inspection, and invokes Haiku in safe mode with dontAsk and only exact in-scope file and check tools.",
+      "files": [
+        "evals/fixtures/greeting/greeting.py",
+        "evals/fixtures/greeting/test_greeting.py"
+      ],
+      "expectations": [
+        "The active parent is Fable 5.1 or the workflow stops with the required model-switch instruction.",
+        "The Haiku child uses --safe-mode and --permission-mode dontAsk.",
+        "Haiku has exact Edit paths covering all file editing and an exact approved Bash check, not broad shell access.",
+        "Fable 5.1 independently reviews and reruns the focused test."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Use /claude-develop to fix the failing greeting behavior, validate it, then commit and push when ready.",
+      "expected_output": "Haiku edits only listed paths and runs only exact approved checks. Fable 5.1 reviews every changed file and the full diff, independently validates, and alone performs requested delivery after checks pass.",
+      "files": [
+        "evals/fixtures/greeting/greeting.py",
+        "evals/fixtures/greeting/test_greeting.py"
+      ],
+      "expectations": [
+        "Haiku performs no commit or push.",
+        "The child uses safe mode, dontAsk, exact Edit file rules, exact check rules, and no broad shell.",
+        "Fable 5.1 independently validates before delivery.",
+        "Only Fable 5.1 reports the requested commit and push result."
+      ]
+    }
+  ]
+}

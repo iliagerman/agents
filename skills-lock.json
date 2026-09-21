@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "ponytail": {
+      "source": "/Users/iliagerman/Work/personal_projects/agents/skills/ponytail",
+      "sourceType": "local",
+      "computedHash": "29c1afa55df016f2b6f7e6a12164d5a3a63ed3639d37910f06a4efae1d6ab6ca"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+# Template .dockerignore — drop into the repo root as `.dockerignore`.
+# Keeps caches, local databases, virtualenvs, secrets, and editor junk out
+# of the docker build context.
+
+# Git / VCS
+.git
+.gitignore
+.githooks
+
+# Local databases — never bake these into images
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+**/*.db
+
+# Python caches and virtualenvs
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+
+# Node / JS
+**/node_modules
+
+# Editor / OS junk
+.DS_Store
+**/.DS_Store
+.idea
+.vscode
+
+# Logs
+**/*.log
+logs/
+
+# Local secrets — never copy into the image
+.env
+.env.*
+secrets.yml
+secrets.yaml
+
+# Deployment artifacts and keys
+deployments/**/*.pem
+deployments/**/*.pub
+deployments/**/db-password.txt
+
+# Docs and READMEs — not needed in the runtime image
+docs/
+README.md

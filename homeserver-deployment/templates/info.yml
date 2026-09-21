@@ -1,0 +1,7 @@
+ssh_alias: homeserver
+domain: __DOMAIN__
+remote_dir: ~/__SERVICE_DIR__
+container_name: __CONTAINER__
+forward_hostname: __CONTAINER__
+forward_port: __PORT__
+external_network: system_default
